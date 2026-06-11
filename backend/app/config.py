@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     GROK_API_KEY: str = ""
 
     # ── Feature Flags ─────────────────────────────────────
-    USE_MOCK_PROVIDERS: bool = True
+    USE_MOCK_PROVIDERS: bool = False
 
     # ── CORS ──────────────────────────────────────────────
     CORS_ORIGINS: str = "*"
