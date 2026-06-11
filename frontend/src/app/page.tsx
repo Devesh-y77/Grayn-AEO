@@ -237,15 +237,15 @@ export default function Home() {
       // Stagger data loading to prevent connection pool exhaustion on the backend
       const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       
-      const wsRes = await fetch(getApiUrl("/v1/me"), { headers }).then(r => { if (!r.ok) throw new Error("Auth failed"); return r.json(); });
+      const wsRes = await fetch(getApiUrl("/v1/me"), { headers, cache: "no-store" }).then(r => { if (!r.ok) throw new Error("Auth failed"); return r.json(); });
       
       const [reportRes, promptsRes, clustersRes, competitorsRes, compSourcesRes, workstreamsRes] = await Promise.all([
-        delay(100).then(() => fetch(getApiUrl("/v1/report"), { headers })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-        delay(200).then(() => fetch(getApiUrl("/v1/prompts"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
-        delay(300).then(() => fetch(getApiUrl("/v1/clusters"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
-        delay(400).then(() => fetch(getApiUrl("/v1/competitors"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
-        delay(500).then(() => fetch(getApiUrl("/v1/competitors/sources"), { headers })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-        delay(600).then(() => fetch(getApiUrl("/v1/workstreams"), { headers })).then(r => r.ok ? r.json() : []).catch(() => [])
+        delay(100).then(() => fetch(getApiUrl("/v1/report"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        delay(200).then(() => fetch(getApiUrl("/v1/prompts"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
+        delay(300).then(() => fetch(getApiUrl("/v1/clusters"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
+        delay(400).then(() => fetch(getApiUrl("/v1/competitors"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
+        delay(500).then(() => fetch(getApiUrl("/v1/competitors/sources"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        delay(600).then(() => fetch(getApiUrl("/v1/workstreams"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
 
       setWorkspace(wsRes);
