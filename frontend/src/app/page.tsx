@@ -1706,7 +1706,7 @@ export default function Home() {
                     <div key={brand} className="space-y-3">
                       <h4 className="text-xs font-bold text-purple-400 uppercase tracking-wider">{brand}</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {sources.map((s, idx) => (
+                        {sources.map((s: any, idx: number) => (
                           <div key={idx} className="p-3 rounded-lg bg-zinc-950 border border-zinc-900 flex items-center justify-between">
                             <span className="text-xs font-medium text-zinc-300 font-mono flex items-center gap-1.5">
                               <ExternalLink className="h-3 w-3 text-zinc-600" />
