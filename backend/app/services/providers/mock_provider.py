@@ -62,7 +62,12 @@ class MockProvider(BaseProvider):
         self.engine = engine
 
     async def query(self, prompt: str) -> EngineResult:
-        raw_text = _MOCK_RESPONSES.get(self.engine, _MOCK_RESPONSES[EngineType.OPENAI])
+        if "suggested_competitors" in prompt or "JSON" in prompt:
+            # Return mock discovery JSON
+            raw_text = '{"suggested_competitors": [{"brand_name": "Mock Competitor", "domain": "mock.com", "aliases": []}], "suggested_queries": [{"text": "best mock tools", "attributes": ["Mock"]}], "themes": ["Mocking"]}'
+        else:
+            raw_text = _MOCK_RESPONSES.get(self.engine, _MOCK_RESPONSES[EngineType.OPENAI])
+            
         return EngineResult(
             engine=self.engine.value,
             raw_text=raw_text,
