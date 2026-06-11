@@ -759,7 +759,7 @@ export default function Home() {
               >
                 <LiveTrackingConsole 
                   apiKey={""}
-                  backendUrl={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}
+                  backendUrl={getApiUrl("")}
                   enginesCount={selectedEngines.length || 10}
                   onComplete={async () => {
                     setIsOnboarding(false);
