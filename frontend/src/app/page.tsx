@@ -312,16 +312,16 @@ export default function Home() {
     console.log("DEBUG applyOnboarding - current config:", config);
     try {
       const headers = {
-        "Authorization": `Bearer `,
+        "Authorization": `Bearer ${config.apiKey}`,
         "Content-Type": "application/json"
       };
       
       const payload = {
         competitors: [
-          { brand_name: discoverResult.brand_name || "Brand", domain: discoverUrl, aliases: [] },
-          ...(discoverResult.suggested_competitors || [])
+          { brand_name: discoverResult?.brand_name || "Brand", domain: discoverUrl || "", aliases: [] },
+          ...(discoverResult?.suggested_competitors || [])
         ],
-        queries: discoverResult.suggested_queries || [],
+        queries: discoverResult?.suggested_queries || [],
         engines: selectedEngines
       };
 
