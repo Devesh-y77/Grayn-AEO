@@ -241,7 +241,7 @@ export default function Home() {
         delay(200).then(() => fetch(getApiUrl("/v1/prompts"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
         delay(300).then(() => fetch(getApiUrl("/v1/clusters"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
         delay(400).then(() => fetch(getApiUrl("/v1/competitors"), { headers })).then(r => r.ok ? r.json() : []).catch(() => []),
-        delay(500).then(() => fetch(getApiUrl("/v1/competitors/sources"), { headers })).then(r => r.ok ? r.json() : {}).catch(() => {}),
+        delay(500).then(() => fetch(getApiUrl("/v1/competitors/sources"), { headers })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
         delay(600).then(() => fetch(getApiUrl("/v1/workstreams"), { headers })).then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
 
