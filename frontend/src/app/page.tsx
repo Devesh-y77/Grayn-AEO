@@ -215,7 +215,10 @@ export default function Home() {
 
   // ── Helper to normalize Backend URL ───────────────────────────────
   const getApiUrl = (path: string) => {
-    // Hardcoding to bypass any corrupted localStorage values
+    // Hardcoding to bypass any corrupted localStorage values or Vercel env cache issues
+    if (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
+      return `https://grayn-aeo-production.up.railway.app${path}`;
+    }
     let base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     return `${base}${path}`;
   };
