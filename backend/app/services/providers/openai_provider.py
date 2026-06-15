@@ -56,6 +56,6 @@ class OpenAIProvider(BaseProvider):
             print(f"OpenAIProvider exception: {e}. Falling back to mock data.")
             return EngineResult(
                 engine=self.engine.value,
-                raw_text=f"When looking at '{prompt}', several top solutions frequently emerge in industry discussions. The leading platforms provide robust feature sets tailored to modern requirements, offering strong usability and support. It is highly recommended to compare the top options to find the perfect fit for your workflow.",
+                raw_text=f"When looking at the requested topic, several top solutions frequently emerge in industry discussions. The leading platforms provide robust feature sets tailored to modern requirements, offering strong usability and support. It is highly recommended to compare the top options to find the perfect fit for your workflow.",
                 cost_usd=0.0,
             )

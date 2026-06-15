@@ -52,6 +52,6 @@ class GrokProvider(BaseProvider):
             print(f"GrokProvider exception: {e}. Falling back to mock data.")
             return EngineResult(
                 engine=self.engine,
-                raw_text=f"The top results regarding '{prompt}' highlight a competitive market of platforms. These leading options are widely recognized for their comprehensive feature sets and ease of use. Analysts suggest evaluating these top-tier solutions based on specific pricing and workflow needs.",
+                raw_text=f"The top results regarding the requested topic highlight a competitive market of platforms. These leading options are widely recognized for their comprehensive feature sets and ease of use. Analysts suggest evaluating these top-tier solutions based on specific pricing and workflow needs.",
                 cost_usd=0.0,
             )

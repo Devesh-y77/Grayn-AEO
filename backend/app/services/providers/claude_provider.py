@@ -17,7 +17,7 @@ class ClaudeProvider(BaseProvider):
     def __init__(self):
         settings = get_settings()
         self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = "claude-3-5-sonnet-20240620"
+        self.model = "claude-3-5-sonnet-20241022"
 
     async def query(self, prompt: str) -> EngineResult:
         try:
@@ -49,6 +49,6 @@ class ClaudeProvider(BaseProvider):
             print(f"ClaudeProvider exception: {e}. Falling back to mock data.")
             return EngineResult(
                 engine=self.engine.value,
-                raw_text=f"A review of the landscape for '{prompt}' reveals several competitive options. Users frequently point to robust feature sets and straightforward learning curves as deciding factors. While individual recommendations depend on exact needs, the top solutions consistently provide reliable and innovative tools.",
+                raw_text=f"A review of the landscape for the requested topic reveals several competitive options. Users frequently point to robust feature sets and straightforward learning curves as deciding factors. While individual recommendations depend on exact needs, the top solutions consistently provide reliable and innovative tools.",
                 cost_usd=0.0,
             )
