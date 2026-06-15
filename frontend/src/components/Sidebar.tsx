@@ -22,10 +22,10 @@ export default function Sidebar({ workspaceName }: SidebarProps) {
     <div className="w-64 bg-[#111] border-r border-[#222] flex flex-col h-screen text-sm font-medium text-zinc-400">
       {/* Header */}
       <div className="p-4 border-b border-[#222] flex items-center gap-2">
-        <div className="w-6 h-6 rounded bg-gradient-to-tr from-yellow-500 to-amber-600 flex items-center justify-center text-black font-bold">
-          O
+        <div className="w-6 h-6 rounded bg-gradient-to-tr from-emerald-500 to-green-600 flex items-center justify-center text-black font-bold">
+          G
         </div>
-        <span className="text-white font-semibold text-base tracking-wide">OpenLens</span>
+        <span className="text-white font-semibold text-base tracking-wide">Grayn AEO</span>
       </div>
 
       {workspaceName && (

@@ -55,16 +55,6 @@ export default function AnalyzeStep({ domain, setDomain, onComplete }: AnalyzeSt
 
   return (
     <div className="flex-1 flex flex-col items-center pt-32 text-zinc-300">
-      <div className="w-full max-w-4xl bg-yellow-600/20 text-yellow-500 p-4 rounded mb-20 relative">
-        <button className="absolute right-4 top-4 text-yellow-500/50 hover:text-yellow-500">×</button>
-        <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-0.5 rounded mr-3 uppercase tracking-wider">Announcement</span>
-        <span className="font-semibold text-white">Introducing Starter and Agency</span>
-        <p className="mt-1 text-sm text-yellow-500/80">
-          OpenLens has plans now. Existing accounts keep everything they have today, and early users have a founding-member offer waiting in their inbox.{" "}
-          <a href="#" className="underline hover:text-white">Read the announcement &rarr;</a>
-        </p>
-      </div>
-
       <div className="text-zinc-500 text-sm mb-8 hover:text-white cursor-pointer">&larr; Back to clients</div>
 
       <h1 className="text-3xl font-semibold text-white mb-2 text-center">Add new client</h1>

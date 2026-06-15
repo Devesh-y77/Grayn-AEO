@@ -5,7 +5,7 @@ import Sidebar from "../components/Sidebar";
 import AnalyzeStep from "../components/steps/AnalyzeStep";
 import ConfirmSetupStep, { SetupData } from "../components/steps/ConfirmSetupStep";
 import ReviewPromptsStep, { PromptData } from "../components/steps/ReviewPromptsStep";
-import QueryingModal from "../components/steps/QueryingModal";
+import LiveTrackingConsole from "../components/LiveTrackingConsole";
 import DashboardStep from "../components/steps/DashboardStep";
 
 // Configured local storage keys
@@ -121,21 +121,41 @@ export default function Page() {
         {step === "REVIEW_PROMPTS" && (
           <ReviewPromptsStep 
             setupData={setupData} 
-            onRunPrompts={(prompts) => {
+            onRunPrompts={async (prompts) => {
+              try {
+                // Trigger backend API
+                await fetch(getApiUrl("/v1/runs/trigger"), {
+                  method: "POST",
+                  headers: {
+                    "Authorization": `Bearer ${config?.apiKey}`,
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({
+                    prompts: prompts.map(p => p.text),
+                    domain: setupData.domain,
+                    brand_name: setupData.brandName,
+                    engines: ["chatgpt", "perplexity", "google", "gemini"]
+                  })
+                });
+              } catch(e) {
+                console.error(e);
+              }
               setStep("QUERYING");
             }} 
           />
         )}
-
         {step === "QUERYING" && (
-          <>
-            <DashboardStep reportData={reportData} setupData={setupData} />
-            <QueryingModal 
+          <div className="flex-1 flex items-center justify-center pt-20">
+            <LiveTrackingConsole 
+              apiKey={config?.apiKey || ""}
+              backendUrl={getApiUrl("")}
+              enginesCount={4}
               onComplete={() => {
+                fetchReport();
                 setStep("DASHBOARD");
-              }} 
+              }}
             />
-          </>
+          </div>
         )}
 
         {step === "DASHBOARD" && (

@@ -21,10 +21,20 @@ export default function ReviewPromptsStep({ setupData, onRunPrompts }: ReviewPro
   const [prompts, setPrompts] = useState<PromptData[]>(() => {
     const list: PromptData[] = [];
     setupData.searchTopics.forEach((topic, i) => {
+      const variations = [
+        "What is the best",
+        "Top rated",
+        "Compare",
+        "Reviews for",
+        "Which is better for"
+      ];
       for (let j = 0; j < setupData.promptsPerTopic; j++) {
+        const prefix = variations[j % variations.length];
+        const attr = setupData.attributes[j % setupData.attributes.length] || 'features';
+        
         list.push({
           id: `p_${i}_${j}`,
-          text: `What is the best ${topic.toLowerCase()} for contractors near ${setupData.location} considering ${setupData.attributes[0] || 'features'}?`,
+          text: `${prefix} ${topic.toLowerCase()} near ${setupData.location} considering ${attr}?`,
           topic,
           active: true,
           attributes: setupData.languages.slice(0, 1), // Default tag
