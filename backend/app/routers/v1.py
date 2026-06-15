@@ -61,12 +61,22 @@ def get_me(workspace: dict = Depends(get_current_workspace)):
 
 
 @router.get("/report", response_model=FullReport)
-def get_report(
+async def get_report(
     workspace: dict = Depends(get_current_workspace),
     db: Client = Depends(get_supabase),
 ):
     """SC-10: Composite branded report combining all metrics."""
-    return scoring.build_full_report(db, workspace["id"])
+    return await scoring.build_full_report(db, workspace["id"])
+
+
+@router.get("/trend")
+def get_trend(
+    weeks: int = Query(6, le=12),
+    workspace: dict = Depends(get_current_workspace),
+    db: Client = Depends(get_supabase),
+):
+    """SC-13: Historical visibility trend data."""
+    return scoring.compute_historical_trend(db, workspace["id"], weeks)
 
 
 @router.get("/reports/visibility.pdf")

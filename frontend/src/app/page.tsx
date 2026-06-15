@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import {
   OpenAILogo,
   GeminiLogo,
@@ -154,6 +155,7 @@ export default function Home() {
   // Core Data States
   const [workspace, setWorkspace] = useState<any>(null);
   const [report, setReport] = useState<any>({});
+  const [trendData, setTrendData] = useState<any[]>([]);
   const [prompts, setPrompts] = useState<any[]>([]);
   const [workstreams, setWorkstreams] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
@@ -239,8 +241,9 @@ export default function Home() {
       
       const wsRes = await fetch(getApiUrl("/v1/me"), { headers, cache: "no-store" }).then(r => { if (!r.ok) throw new Error("Auth failed"); return r.json(); });
       
-      const [reportRes, promptsRes, clustersRes, competitorsRes, compSourcesRes, workstreamsRes] = await Promise.all([
+      const [reportRes, trendRes, promptsRes, clustersRes, competitorsRes, compSourcesRes, workstreamsRes] = await Promise.all([
         delay(100).then(() => fetch(getApiUrl("/v1/report"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        delay(150).then(() => fetch(getApiUrl("/v1/trend"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
         delay(200).then(() => fetch(getApiUrl("/v1/prompts"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
         delay(300).then(() => fetch(getApiUrl("/v1/clusters"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
         delay(400).then(() => fetch(getApiUrl("/v1/competitors"), { headers, cache: "no-store" })).then(r => r.ok ? r.json() : []).catch(() => []),
@@ -250,6 +253,7 @@ export default function Home() {
 
       setWorkspace(wsRes);
       setReport(reportRes);
+      setTrendData(trendRes);
       setPrompts(promptsRes);
       setClusters(clustersRes);
       setCompetitors(competitorsRes);
@@ -779,7 +783,7 @@ export default function Home() {
   return (
     <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
       {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
-      <aside className="w-64 border-r border-zinc-900 bg-zinc-950 flex flex-col justify-between">
+      <aside className="w-64 border-r border-zinc-900 bg-zinc-950 flex flex-col justify-between print:hidden">
         <div>
           <div className="h-16 flex items-center gap-3 px-6 border-b border-zinc-900 bg-zinc-900/10">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-500/15">
@@ -919,7 +923,7 @@ export default function Home() {
             <button
               onClick={triggerBatch}
               disabled={triggerLoading}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/20 transition-all duration-150 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/20 transition-all duration-150 disabled:opacity-50 print:hidden"
             >
               {triggerLoading ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -928,6 +932,15 @@ export default function Home() {
               )}
               Trigger Tracking Run
             </button>
+            {activeTab === "dashboard" && (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-4 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs transition-all duration-150 print:hidden"
+              >
+                <Clipboard className="h-3 w-3" />
+                Download Report
+              </button>
+            )}
           </div>
         </header>
 
@@ -959,14 +972,18 @@ export default function Home() {
                   </h3>
                   <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider px-2 py-1 bg-purple-500/10 rounded">Auto-Generated</span>
                 </div>
-                <div className="text-zinc-300 text-sm leading-relaxed">
+                <div className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
                   {report.leaderboard?.length > 0 ? (
-                    <>
-                      <span className="font-bold text-white capitalize">{report.workspace?.brand_name}</span> has <span className="font-bold text-emerald-400">{report.visibility?.visibility_pct}% visibility</span> across recent queries.
-                      You are maintaining strong positioning for <strong>{report.topic_performance?.[0]?.topic || 'core features'}</strong>,
-                      but <strong>{report.platform_scorecard?.[0]?.top_competitor || 'competitors'}</strong> is capturing share in <strong>{report.platform_scorecard?.[0]?.platform || 'certain engines'}</strong>.
-                      Immediately focus on publishing comparison content highlighting your positive attributes ({report.attribute_breakdown?.slice(0, 2).map((a: any) => a.attribute).join(', ') || 'key features'}) to regain momentum and close the gap.
-                    </>
+                    report.ai_insight ? (
+                      <>{report.ai_insight}</>
+                    ) : (
+                      <>
+                        <span className="font-bold text-white capitalize">{report.workspace?.brand_name}</span> has <span className="font-bold text-emerald-400">{report.visibility?.visibility_pct}% visibility</span> across recent queries.
+                        You are maintaining strong positioning for <strong>{report.topic_performance?.[0]?.topic || 'core features'}</strong>,
+                        but <strong>{report.platform_scorecard?.[0]?.top_competitor || 'competitors'}</strong> is capturing share in <strong>{report.platform_scorecard?.[0]?.platform || 'certain engines'}</strong>.
+                        Immediately focus on publishing comparison content highlighting your positive attributes ({report.attribute_breakdown?.slice(0, 2).map((a: any) => a.attribute).join(', ') || 'key features'}) to regain momentum and close the gap.
+                      </>
+                    )
                   ) : report.recent_runs?.some((r: any) => r.status === 'error') ? (
                     <div className="flex items-start gap-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
                       <AlertTriangle className="h-5 w-5 text-rose-400 mt-0.5 shrink-0" />
@@ -1062,6 +1079,35 @@ export default function Home() {
                 {/* Left Column (3 spans) */}
                 <div className="col-span-1 lg:col-span-3 space-y-6">
                   
+                  {/* Visibility Trend */}
+                  <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      Visibility Trend
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px]">?</span>
+                    </h3>
+                    <div className="h-64 w-full">
+                      {trendData && trendData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={trendData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                            <XAxis dataKey="week" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                            <RechartsTooltip 
+                              contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                              itemStyle={{ color: '#a78bfa' }}
+                              formatter={(value) => [`${value}%`, 'Visibility']}
+                            />
+                            <Line type="monotone" dataKey="visibility" stroke="#a78bfa" strokeWidth={3} dot={{ fill: '#a78bfa', r: 4 }} activeDot={{ r: 6 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
+                          Insufficient data to plot trend line.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Platform Scorecard */}
                   <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6 overflow-x-auto">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">

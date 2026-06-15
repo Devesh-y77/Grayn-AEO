@@ -599,11 +599,51 @@ def compute_topic_performance(
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Historical Trend
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def compute_historical_trend(
+    db: Client, workspace_id: str, weeks: int = 6
+) -> list[dict]:
+    """Calculates weekly visibility trend for the target brand and top competitors."""
+    now = datetime.utcnow()
+    # Generate the last N weeks
+    iso_weeks = []
+    for i in range(weeks):
+        d = now - timedelta(weeks=i)
+        iso_weeks.append(f"{d.isocalendar()[0]}-W{d.isocalendar()[1]:02d}")
+    iso_weeks.reverse() # Oldest to newest
+
+    trend_data = []
+    
+    ws = db.table("workspaces").select("brand_name", "domain", "aliases").eq("id", workspace_id).single().execute().data
+    target_lower = ws.get("brand_name", "").lower()
+    
+    for w in iso_weeks:
+        runs = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).eq("iso_week", w).eq("status", "complete").execute().data or []
+        if not runs:
+            trend_data.append({"week": w, "visibility": 0.0})
+            continue
+
+        run_ids = [r["id"] for r in runs]
+        mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", run_ids).execute().data or []
+        
+        target_hits = set()
+        for m in mentions:
+            if m["is_target_brand"]:
+                target_hits.add(m["run_id"])
+        
+        vis_pct = round((len(target_hits) / len(runs)) * 100, 1) if runs else 0.0
+        trend_data.append({"week": w, "visibility": vis_pct})
+        
+    return trend_data
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Full Report
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-def build_full_report(
+async def build_full_report(
     db: Client, workspace_id: str, iso_week: str | None = None
 ) -> FullReport:
     """SC-10: Composite report combining all metrics."""
@@ -665,6 +705,18 @@ def build_full_report(
             )
             break
 
+    from app.services.insights import generate_report_insight
+
+    report_dump = {
+        "workspace": ws,
+        "visibility": visibility.model_dump(),
+        "leaderboard": [l.model_dump() for l in leaderboard[:5]],
+        "platform_scorecard": [p.model_dump() for p in platform_scorecard],
+        "topic_performance": [t.model_dump() for t in topic_performance[:3]],
+    }
+    
+    ai_insight = await generate_report_insight(report_dump)
+
     return FullReport(
         workspace=WorkspaceOut(**ws),
         visibility=visibility,
@@ -677,4 +729,5 @@ def build_full_report(
         topic_performance=topic_performance,
         recent_runs=recent_runs,
         iso_week=week,
+        ai_insight=ai_insight,
     )

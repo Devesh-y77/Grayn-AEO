@@ -312,6 +312,7 @@ class FullReport(BaseModel):
     topic_performance: List[TopicPerformanceEntry] = Field(default_factory=list)
     recent_runs: List[RunOut] = Field(default_factory=list)
     iso_week: str
+    ai_insight: Optional[str] = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
