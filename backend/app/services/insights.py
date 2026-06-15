@@ -21,20 +21,19 @@ async def generate_report_insight(report_data: dict) -> str:
     """Generate a strategic insight paragraph from the report data."""
     settings = get_settings()
 
-    # Try to find an available provider
-    provider_type = None
+    available_providers = []
     if settings.anthropic_available:
-        provider_type = EngineType.CLAUDE
-    elif settings.openai_available:
-        provider_type = EngineType.OPENAI
-    elif settings.gemini_available:
-        provider_type = EngineType.GEMINI
-    elif settings.groq_available:
-        provider_type = EngineType.GROQ
-    elif settings.deepseek_available:
-        provider_type = EngineType.DEEPSEEK
+        available_providers.append(EngineType.CLAUDE)
+    if settings.openai_available:
+        available_providers.append(EngineType.OPENAI)
+    if settings.gemini_available:
+        available_providers.append(EngineType.GEMINI)
+    if settings.groq_available:
+        available_providers.append(EngineType.GROQ)
+    if settings.deepseek_available:
+        available_providers.append(EngineType.DEEPSEEK)
 
-    if not provider_type:
+    if not available_providers:
         if settings.USE_MOCK_PROVIDERS:
             # Fallback mock insight
             ws = report_data.get("workspace", {})
@@ -45,18 +44,25 @@ async def generate_report_insight(report_data: dict) -> str:
             logger.warning("No API keys available to generate AI insight.")
             return "No AI providers configured to generate insights."
 
-    try:
-        provider = get_provider(provider_type)
-        user_prompt = f"{INSIGHT_SYSTEM_PROMPT}\n\nReport Data JSON:\n{report_data}"
-        
-        # Some providers need an async context manager
-        if hasattr(provider, "__aenter__"):
-            async with provider as p:
-                res = await p.query(user_prompt)
-        else:
-            res = await provider.query(user_prompt)
+    user_prompt = f"{INSIGHT_SYSTEM_PROMPT}\n\nReport Data JSON:\n{report_data}"
+
+    last_error = None
+    for provider_type in available_providers:
+        try:
+            provider = get_provider(provider_type)
+            if hasattr(provider, "__aenter__"):
+                async with provider as p:
+                    res = await p.query(user_prompt)
+            else:
+                res = await provider.query(user_prompt)
             
-        return res.raw_text.strip()
-    except Exception as e:
-        logger.error(f"Failed to generate AI insight: {e}")
-        return "Failed to generate AI insight due to an API error."
+            # If the provider swallowed an exception and returned mock text, but we don't want mock text
+            if not settings.USE_MOCK_PROVIDERS and "A review of the landscape" in res.raw_text:
+                raise Exception("Provider returned mock fallback string instead of real API response.")
+                
+            return res.raw_text.strip()
+        except Exception as e:
+            logger.error(f"Failed to generate AI insight with {provider_type.value}: {e}")
+            last_error = e
+
+    return "Failed to generate AI insight. All configured AI providers returned errors."
