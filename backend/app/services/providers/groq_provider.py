@@ -20,7 +20,7 @@ class GroqProvider(BaseProvider):
             api_key=settings.GROQ_API_KEY,
             base_url="https://api.groq.com/openai/v1",
         )
-        self.model = "llama3-70b-8192"
+        self.model = "llama-3.3-70b-versatile"
 
     async def query(self, prompt: str) -> EngineResult:
         response = await self.client.chat.completions.create(

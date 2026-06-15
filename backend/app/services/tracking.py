@@ -138,17 +138,14 @@ async def run_single_prompt(
         
         for m in extraction.mentions:
             m_lower = m.brand_name.lower()
-            if m_lower == target_lower or m_lower in aliases or target_lower in m_lower:
-                m.is_target_brand = True
-            elif any(alias in m_lower for alias in aliases):
-                m.is_target_brand = True
+            is_target = m.is_target_brand or target_lower in m_lower or any(a in m_lower for a in aliases)
             
             attrs_dump = [a.model_dump() for a in m.attributes]
             db.table("aeo_mentions").insert({
                 "workspace_id": workspace_id,
                 "run_id": run_id,
                 "brand_name": m.brand_name,
-                "is_target_brand": m.is_target_brand,
+                "is_target_brand": is_target,
                 "position": m.position,
                 "sentiment": m.sentiment.value,
                 "attributes": attrs_dump,
