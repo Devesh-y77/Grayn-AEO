@@ -15,3 +15,5 @@ frontend/out/
 frontend/build/
 frontend/.vercel/
 frontend/.env*
+
+.vercel
