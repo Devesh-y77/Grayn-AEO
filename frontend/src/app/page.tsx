@@ -1741,7 +1741,7 @@ export default function Home() {
             <LiveTrackingConsole 
               apiKey={config.apiKey}
               backendUrl={config.backendUrl}
-              enginesCount={8}
+              enginesCount={selectedEngines.length || 6}
               title="Manual Batch Run in Progress"
               subtitle="Executing active tracking across selected AI engines..."
               onComplete={async () => {

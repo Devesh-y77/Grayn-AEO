@@ -205,22 +205,32 @@ async def trigger_batch_run(
 
     results = {"completed": 0, "skipped": 0, "failed": 0, "total_cost": 0.0}
 
-    for prompt in prompts:
-        for engine in engines:
+    import asyncio
+    semaphore = asyncio.Semaphore(10)
+
+    async def _bounded_run(prompt, engine):
+        async with semaphore:
             try:
-                run = await run_single_prompt(
-                    db, workspace, prompt, engine, iso_week
-                )
-                if run and run.get("status") == "complete":
-                    results["completed"] += 1
-                    results["total_cost"] += run.get("cost_usd", 0) or 0
-                elif run and run.get("status") == "error":
-                    results["failed"] += 1
-                else:
-                    results["skipped"] += 1
+                return await run_single_prompt(db, workspace, prompt, engine, iso_week)
             except Exception as exc:
                 logger.error("Batch run error: %s", exc)
-                results["failed"] += 1
+                return None
+
+    tasks = []
+    for prompt in prompts:
+        for engine in engines:
+            tasks.append(_bounded_run(prompt, engine))
+
+    runs = await asyncio.gather(*tasks)
+
+    for run in runs:
+        if run and run.get("status") == "complete":
+            results["completed"] += 1
+            results["total_cost"] += run.get("cost_usd", 0) or 0
+        elif run and run.get("status") == "error":
+            results["failed"] += 1
+        else:
+            results["skipped"] += 1
 
     results["total_cost"] = round(results["total_cost"], 4)
     results["iso_week"] = iso_week
