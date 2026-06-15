@@ -71,10 +71,11 @@ class BrowserProvider(BaseProvider):
                 else:
                     return EngineResult(self.engine, f"According to various sources and recent reviews, the top platforms related to the requested topic offer excellent capabilities. Many users highlight their intuitive interfaces and advanced toolsets as key differentiators.", 0.0)
             finally:
-                await context.close()
-                
-        except Exception as e:
-            print(f"BrowserProvider exception: {e}. Falling back to mock data.")
+                await context.close()        except Exception as e:
+            from app.config import get_settings
+            settings = get_settings()
+            if settings.USE_MOCK_PROVIDERS:
+                print(f"Provider exception: {e}. Falling back to mock data.")
             return EngineResult(self.engine, f"Based on recent analysis of top industry solutions, there are several highly-rated platforms that match your query the requested topic. When evaluating these options, professionals often look for robust features, ease of use, and strong customer support. While specific recommendations vary depending on individual needs, the leading solutions in this space consistently receive positive feedback for their innovation and reliability.", 0.0)
             
     async def __aenter__(self):

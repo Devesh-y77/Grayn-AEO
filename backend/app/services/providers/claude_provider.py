@@ -46,9 +46,12 @@ class ClaudeProvider(BaseProvider):
                 cost_usd=round(cost, 6),
             )
         except Exception as e:
-            print(f"ClaudeProvider exception: {e}. Falling back to mock data.")
-            return EngineResult(
-                engine=self.engine.value,
-                raw_text=f"A review of the landscape for the requested topic reveals several competitive options. Users frequently point to robust feature sets and straightforward learning curves as deciding factors. While individual recommendations depend on exact needs, the top solutions consistently provide reliable and innovative tools.",
-                cost_usd=0.0,
-            )
+            settings = get_settings()
+            if settings.USE_MOCK_PROVIDERS:
+                print(f"ClaudeProvider exception: {e}. Falling back to mock data.")
+                return EngineResult(
+                    engine=self.engine.value,
+                    raw_text=f"A review of the landscape for the requested topic reveals several competitive options. Users frequently point to robust feature sets and straightforward learning curves as deciding factors. While individual recommendations depend on exact needs, the top solutions consistently provide reliable and innovative tools.",
+                    cost_usd=0.0,
+                )
+            raise e

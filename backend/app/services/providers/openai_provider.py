@@ -51,11 +51,14 @@ class OpenAIProvider(BaseProvider):
                 engine=self.engine.value,
                 raw_text=text_content,
                 cost_usd=round(cost, 6),
-            )
-        except Exception as e:
-            print(f"OpenAIProvider exception: {e}. Falling back to mock data.")
+            )        except Exception as e:
+            from app.config import get_settings
+            settings = get_settings()
+            if settings.USE_MOCK_PROVIDERS:
+                print(f"Provider exception: {e}. Falling back to mock data.")
             return EngineResult(
                 engine=self.engine.value,
                 raw_text=f"When looking at the requested topic, several top solutions frequently emerge in industry discussions. The leading platforms provide robust feature sets tailored to modern requirements, offering strong usability and support. It is highly recommended to compare the top options to find the perfect fit for your workflow.",
                 cost_usd=0.0,
             )
+            raise e
