@@ -295,10 +295,15 @@ class AttributeBreakdown(BaseModel):
     sentiment: str
 
 
+class TopLevelShareOfVoice(BaseModel):
+    share_pct: float
+    avg_position: float
+
+
 class FullReport(BaseModel):
     workspace: WorkspaceOut
     visibility: VisibilityScore
-    share_of_voice: List[ShareOfVoice]
+    share_of_voice: Optional[TopLevelShareOfVoice] = None
     leaderboard: List[LeaderboardEntry]
     brand_citations: List[CitationBreakdown]
     competitor_sources: dict = {}

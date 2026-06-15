@@ -653,10 +653,22 @@ def build_full_report(
             r["error_message"] = r.get("raw_response", "Unknown error")
         recent_runs.append(RunOut(**r))
 
+    # Find top level share of voice for the target brand
+    target_lower = ws.get("brand_name", "").lower()
+    top_level_sov = None
+    for entry in leaderboard:
+        if target_lower in entry.brand_name.lower():
+            from app.models.schemas import TopLevelShareOfVoice
+            top_level_sov = TopLevelShareOfVoice(
+                share_pct=entry.share_pct,
+                avg_position=entry.avg_position or 1.0
+            )
+            break
+
     return FullReport(
         workspace=WorkspaceOut(**ws),
         visibility=visibility,
-        share_of_voice=sov_list,
+        share_of_voice=top_level_sov,
         leaderboard=leaderboard,
         brand_citations=citations,
         competitor_sources=comp_sources,
