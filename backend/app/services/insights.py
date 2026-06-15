@@ -24,7 +24,7 @@ async def generate_report_insight(report_data: dict) -> str:
     # Try to find an available provider
     provider_type = None
     if settings.anthropic_available:
-        provider_type = EngineType.ANTHROPIC
+        provider_type = EngineType.CLAUDE
     elif settings.openai_available:
         provider_type = EngineType.OPENAI
     elif settings.gemini_available:

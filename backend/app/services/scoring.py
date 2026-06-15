@@ -412,7 +412,14 @@ def compute_competitor_sources(
             .data
             or []
         )
-        result[comp_name] = citations
+        
+        domain_counts = defaultdict(int)
+        for c in citations:
+            domain_counts[c["domain"]] += 1
+            
+        agg = [{"domain": dom, "count": cnt} for dom, cnt in domain_counts.items()]
+        agg.sort(key=lambda x: x["count"], reverse=True)
+        result[comp_name] = agg[:10]
 
     return result
 
