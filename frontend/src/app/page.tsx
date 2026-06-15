@@ -123,22 +123,42 @@ export default function Page() {
             setupData={setupData} 
             onRunPrompts={async (prompts) => {
               try {
-                // Trigger backend API
+                // 1. Insert competitors
+                for (const comp of setupData.competitors) {
+                  if (comp.name.trim()) {
+                    await fetch(getApiUrl("/v1/competitors"), {
+                      method: "POST",
+                      headers: { "Authorization": `Bearer ${config?.apiKey}`, "Content-Type": "application/json" },
+                      body: JSON.stringify({ brand_name: comp.name, domain: comp.url || "", aliases: [] })
+                    }).catch(console.error);
+                  }
+                }
+
+                // 2. Insert prompts in bulk
+                const promptsRes = await fetch(getApiUrl("/v1/prompts/bulk"), {
+                  method: "POST",
+                  headers: { "Authorization": `Bearer ${config?.apiKey}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    prompts: prompts.map(p => ({
+                      prompt_text: p.text,
+                      topic_cluster: p.topic
+                    }))
+                  })
+                });
+                const savedPrompts = await promptsRes.json();
+                const promptIds = savedPrompts.map((p: any) => p.id);
+
+                // 3. Trigger tracking run
                 await fetch(getApiUrl("/v1/runs/trigger"), {
                   method: "POST",
-                  headers: {
-                    "Authorization": `Bearer ${config?.apiKey}`,
-                    "Content-Type": "application/json"
-                  },
+                  headers: { "Authorization": `Bearer ${config?.apiKey}`, "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    prompts: prompts.map(p => p.text),
-                    domain: setupData.domain,
-                    brand_name: setupData.brandName,
-                    engines: ["chatgpt", "perplexity", "google", "gemini"]
+                    engines: ["chatgpt", "perplexity", "google", "gemini"],
+                    prompt_ids: promptIds
                   })
                 });
               } catch(e) {
-                console.error(e);
+                console.error("Error starting run:", e);
               }
               setStep("QUERYING");
             }} 
