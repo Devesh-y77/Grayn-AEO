@@ -138,7 +138,9 @@ async def run_single_prompt(
         
         for m in extraction.mentions:
             m_lower = m.brand_name.lower()
-            if m_lower == target_lower or m_lower in aliases:
+            if m_lower == target_lower or m_lower in aliases or target_lower in m_lower:
+                m.is_target_brand = True
+            elif any(alias in m_lower for alias in aliases):
                 m.is_target_brand = True
             
             attrs_dump = [a.model_dump() for a in m.attributes]

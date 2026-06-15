@@ -886,6 +886,7 @@ async def run_discovery(body: DiscoverRequest):
     try:
         parsed = await discovery.run_discovery(body.url, num_queries=body.num_queries)
         return DiscoverResult(
+            brand_name=parsed.get("brand_name"),
             suggested_competitors=parsed.get("suggested_competitors", []),
             suggested_queries=parsed.get("suggested_queries", []),
             themes=parsed.get("themes", [])

@@ -1138,7 +1138,11 @@ export default function Home() {
                       </thead>
                       <tbody className="divide-y divide-zinc-900/50">
                         {report.leaderboard?.map((entry: any, idx: number) => {
-                          const isYou = report.workspace?.domain && entry.brand_name.toLowerCase().includes(report.workspace.domain.replace("www.", "").replace(".com", ""));
+                          const isYou = report.workspace?.brand_name && (
+                            entry.brand_name.toLowerCase().includes(report.workspace.brand_name.toLowerCase()) ||
+                            report.workspace.brand_name.toLowerCase().includes(entry.brand_name.toLowerCase()) ||
+                            (report.workspace.aliases || []).some((a: string) => entry.brand_name.toLowerCase().includes(a.toLowerCase()))
+                          );
                           return (
                             <tr key={entry.brand_name} className="hover:bg-zinc-900/20">
                               <td className="py-4">

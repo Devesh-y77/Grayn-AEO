@@ -365,6 +365,7 @@ class SuggestedQuery(BaseModel):
 
 
 class DiscoverResult(BaseModel):
+    brand_name: Optional[str] = None
     suggested_competitors: List[CompetitorCreate]
     suggested_queries: List[SuggestedQuery]
     themes: List[str]
