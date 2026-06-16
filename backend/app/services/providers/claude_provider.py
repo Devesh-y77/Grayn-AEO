@@ -17,7 +17,7 @@ class ClaudeProvider(BaseProvider):
     def __init__(self):
         settings = get_settings()
         self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-3-5-sonnet-20240620"
 
     async def query(self, prompt: str) -> EngineResult:
         try:
