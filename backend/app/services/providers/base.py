@@ -64,9 +64,13 @@ def get_provider(engine: EngineType) -> BaseProvider:
         return BrowserProvider(engine)
 
     if engine == EngineType.PERPLEXITY:
-        from app.services.providers.browser_provider import BrowserProvider
-        return BrowserProvider(engine)
-        
+        if settings.perplexity_available:
+            from app.services.providers.perplexity_provider import PerplexityProvider
+            return PerplexityProvider()
+        if settings.USE_MOCK_PROVIDERS:
+            from app.services.providers.mock_provider import MockProvider
+            return MockProvider(engine)
+        raise ValueError(f"PERPLEXITY_API_KEY is missing for engine {engine.value}")
     if engine == EngineType.CLAUDE:
         if settings.anthropic_available:
             from app.services.providers.claude_provider import ClaudeProvider

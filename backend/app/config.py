@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""
     GROK_API_KEY: str = ""
+    PERPLEXITY_API_KEY: str = ""
 
     # ── Feature Flags ─────────────────────────────────────
     USE_MOCK_PROVIDERS: bool = False
@@ -66,6 +67,10 @@ class Settings(BaseSettings):
     @property
     def deepseek_available(self) -> bool:
         return bool(self.DEEPSEEK_API_KEY) and not self.USE_MOCK_PROVIDERS
+
+    @property
+    def perplexity_available(self) -> bool:
+        return bool(self.PERPLEXITY_API_KEY) and not self.USE_MOCK_PROVIDERS
 
     @property
     def grok_available(self) -> bool:
