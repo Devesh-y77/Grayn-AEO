@@ -13,7 +13,7 @@ Computes all BRD-defined metrics from raw run/mention/citation data:
 """
 
 import logging
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timedelta
 from supabase import Client
 from app.models.schemas import (
@@ -227,8 +227,6 @@ def compute_share_of_voice(
         .data
         or []
     )
-
-    from collections import Counter
 
     # Count mentions per brand
     brand_counts: dict[str, int] = defaultdict(int)
@@ -495,8 +493,6 @@ def compute_attribute_breakdown(
     return result
 
 
-from app.models.schemas import PlatformScorecardEntry, TopicPerformanceEntry
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Platform Scorecard
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -505,9 +501,13 @@ def compute_platform_scorecard(
     db: Client, workspace_id: str, week: str, target_brand_domain: str, top_competitor: str | None
 ) -> list[PlatformScorecardEntry]:
     """SC-11: Visibility per engine compared to the top competitor."""
-    runs = db.table("aeo_runs").select("id, engine").eq("workspace_id", workspace_id).eq("iso_week", week).eq("status", "complete").execute().data or []
+    runs = db.table("aeo_runs").select("id, engine, raw_response, created_at, prompt_id").eq("workspace_id", workspace_id).eq("iso_week", week).eq("status", "complete").execute().data or []
     if not runs:
         return []
+
+    prompt_ids = list(set([r["prompt_id"] for r in runs if r.get("prompt_id")]))
+    prompts = db.table("aeo_prompts").select("id, prompt_text").in_("id", prompt_ids).execute().data or [] if prompt_ids else []
+    prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
 
     mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", [r["id"] for r in runs]).execute().data or []
 

@@ -265,6 +265,12 @@ class LeaderboardEntry(BaseModel):
     avg_position: Optional[float] = None
 
 
+class PlatformResponseSnippet(BaseModel):
+    date: str
+    query: str
+    is_mentioned: bool
+    raw_text: str
+
 class PlatformScorecardEntry(BaseModel):
     platform: str
     your_visibility: float
@@ -272,6 +278,7 @@ class PlatformScorecardEntry(BaseModel):
     top_competitor_visibility: float
     gap: float
     status: str
+    recent_responses: List[PlatformResponseSnippet] = Field(default_factory=list)
 
 
 class TopicPerformanceEntry(BaseModel):
