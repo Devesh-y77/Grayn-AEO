@@ -76,7 +76,8 @@ class BrowserProvider(BaseProvider):
                 else:
                     return EngineResult(self.engine, f"According to various sources and recent reviews, the top platforms related to the requested topic offer excellent capabilities. Many users highlight their intuitive interfaces and advanced toolsets as key differentiators.", 0.0)
             finally:
-                await context.close()        except Exception as e:
+                await context.close()
+        except Exception as e:
             from app.config import get_settings
             settings = get_settings()
             if settings.USE_MOCK_PROVIDERS:

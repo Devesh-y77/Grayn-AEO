@@ -51,7 +51,8 @@ class GeminiProvider(BaseProvider):
                 engine=self.engine.value,
                 raw_text=raw_text,
                 cost_usd=round(cost, 6),
-            )        except Exception as e:
+            )
+        except Exception as e:
             from app.config import get_settings
             settings = get_settings()
             if settings.USE_MOCK_PROVIDERS:

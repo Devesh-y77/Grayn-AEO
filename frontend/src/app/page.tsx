@@ -10,6 +10,7 @@ import {
   GrokLogo,
   GroqLogo,
   DeepSeekLogo,
+  GoogleLogo,
 } from "@/components/EngineLogos";
 import {
   Activity,
@@ -554,6 +555,7 @@ export default function Home() {
   }
 
   const AVAILABLE_ENGINES = [
+    { id: "google_ai", name: "Google AI", icon: <GoogleLogo className="h-5 w-5" />, color: "from-blue-500 to-red-500", bg: "bg-blue-500/10", border: "border-blue-500/30" },
     { id: "openai", name: "ChatGPT", icon: <OpenAILogo className="h-5 w-5" />, color: "from-emerald-400 to-emerald-600", bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
     { id: "gemini", name: "Gemini", icon: <GeminiLogo className="h-5 w-5" />, color: "from-blue-400 to-indigo-600", bg: "bg-blue-500/10", border: "border-blue-500/30" },
     { id: "perplexity", name: "Perplexity", icon: <PerplexityLogo className="h-5 w-5" />, color: "from-cyan-400 to-blue-500", bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
@@ -1464,10 +1466,10 @@ export default function Home() {
                   <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6 sticky top-6">
                     <h3 className="text-sm font-bold text-white flex items-center justify-between">
                       AI Sources
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Top 10</span>
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">All Domains</span>
                     </h3>
-                    <div className="space-y-4">
-                      {report.brand_citations?.slice(0, 10).map((cit: any, idx: number) => {
+                    <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                      {report.brand_citations?.map((cit: any, idx: number) => {
                         const isExpanded = expandedDomains.includes(cit.domain);
                         const toggleDomain = () => setExpandedDomains(prev => 
                           isExpanded ? prev.filter(d => d !== cit.domain) : [...prev, cit.domain]
@@ -1481,7 +1483,15 @@ export default function Home() {
                             >
                               <div className="flex items-center gap-2">
                                 {isExpanded ? <ChevronDown className="h-3 w-3 text-zinc-500" /> : <ChevronRight className="h-3 w-3 text-zinc-500" />}
-                                <span className={`text-xs font-bold ${cit.is_brand_citation ? 'text-emerald-400' : 'text-zinc-200'}`}>{cit.domain}</span>
+                                <a 
+                                  href={`https://${cit.domain}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`text-xs font-bold hover:underline ${cit.is_brand_citation ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-200 hover:text-white'}`}
+                                >
+                                  {cit.domain}
+                                </a>
                                 {cit.is_brand_citation && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wider">Own</span>}
                               </div>
                               <span className="text-xs font-bold text-zinc-400">{cit.count}</span>
