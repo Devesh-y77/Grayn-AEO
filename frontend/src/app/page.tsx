@@ -1549,6 +1549,17 @@ export default function Home() {
                         </tr>
                       ))}
                     </tbody>
+                    {report.recent_runs && report.recent_runs.length > 0 && (
+                      <tfoot className="border-t border-zinc-800 bg-zinc-950/50">
+                        <tr>
+                          <td colSpan={3} className="py-3 px-2 text-right font-bold text-zinc-400">Total API Cost:</td>
+                          <td className="py-3 font-bold text-emerald-400">
+                            ${report.recent_runs.reduce((acc: number, run: any) => acc + (run.cost_usd || 0), 0).toFixed(4)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </div>
@@ -1940,7 +1951,14 @@ export default function Home() {
                     <div key={c.id} className="p-4 rounded-xl border border-zinc-900 bg-zinc-900/20 flex items-center justify-between">
                       <div>
                         <span className="font-bold text-xs text-white block">{c.brand_name}</span>
-                        <span className="text-[10px] text-zinc-500 block">{c.domain}</span>
+                        <a 
+                          href={c.domain.startsWith('http') ? c.domain : `https://${c.domain}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-[10px] text-zinc-500 hover:text-blue-400 hover:underline block"
+                        >
+                          {c.domain}
+                        </a>
                       </div>
                       <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded font-semibold uppercase">
                         Active
@@ -1962,10 +1980,15 @@ export default function Home() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {sources.map((s: any, idx: number) => (
                           <div key={idx} className="p-3 rounded-lg bg-zinc-950 border border-zinc-900 flex items-center justify-between">
-                            <span className="text-xs font-medium text-zinc-300 font-mono flex items-center gap-1.5">
+                            <a 
+                              href={`https://${s.domain}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-medium text-zinc-300 font-mono flex items-center gap-1.5 hover:text-blue-400 hover:underline"
+                            >
                               <ExternalLink className="h-3 w-3 text-zinc-600" />
                               {s.domain}
-                            </span>
+                            </a>
                             <span className="text-[10px] text-zinc-500 font-semibold uppercase">{s.count} mentions</span>
                           </div>
                         ))}

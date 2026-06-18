@@ -714,7 +714,7 @@ async def build_full_report(
         .select("*")
         .eq("workspace_id", workspace_id)
         .order("created_at", desc=True)
-        .limit(10)
+        .limit(1000)
         .execute()
         .data
         or []
