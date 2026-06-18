@@ -144,7 +144,7 @@ const EnginePinger = ({ engines, onComplete }: { engines: string[], onComplete: 
 
 export default function Home() {
   // ── States ──────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"dashboard" | "workstreams" | "clusters" | "prompts" | "competitors" | "settings">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "workstreams" | "clusters" | "prompts" | "competitors" | "settings" | "tracker">("dashboard");
   const [config, setConfig] = useState<Config>({
     backendUrl: process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000"),
     apiKey: "gk_devprefix_devsecretkey123456789", // Dev API key seeded in DB
@@ -152,6 +152,13 @@ export default function Home() {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [expandedDomains, setExpandedDomains] = useState<string[]>([]);
+  const [trackerPrompts, setTrackerPrompts] = useState<any[]>([]);
+  const [selectedTrackerPromptId, setSelectedTrackerPromptId] = useState<string | null>(null);
+  const [queryTrackerData, setQueryTrackerData] = useState<any | null>(null);
+  const [trackerLoading, setTrackerLoading] = useState(false);
+  const [expandedTrackerEngines, setExpandedTrackerEngines] = useState<string[]>([]);
 
   const getCompetitorLink = (name: string) => {
     if (!name || name === "N/A") return "#";
@@ -278,6 +285,28 @@ export default function Home() {
       setIsOnboarding(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchQueryTracker = async (promptId: string) => {
+    setTrackerLoading(true);
+    setSelectedTrackerPromptId(promptId);
+    setQueryTrackerData(null);
+    setExpandedTrackerEngines([]);
+    try {
+      const headers = {
+        "Authorization": `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      };
+      const res = await fetch(getApiUrl(`/v1/prompts/${promptId}/tracker`), { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setQueryTrackerData(data);
+      }
+    } catch (err) {
+      console.error("Failed to load tracker data", err);
+    } finally {
+      setTrackerLoading(false);
     }
   };
 
@@ -858,6 +887,17 @@ export default function Home() {
               <Users className="h-4 w-4" />
               Competitor Analysis
             </button>
+            <button
+              onClick={() => setActiveTab("tracker")}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === "tracker"
+                  ? "bg-zinc-900 text-white shadow-inner border border-zinc-800"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-900/50"
+              }`}
+            >
+              <FileText className="h-4 w-4" />
+              Query Data Tracker
+            </button>
           </nav>
         </div>
 
@@ -1408,18 +1448,43 @@ export default function Home() {
                       <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Top 10</span>
                     </h3>
                     <div className="space-y-4">
-                      {report.brand_citations?.slice(0, 10).map((cit: any, idx: number) => (
-                        <div key={idx} className="flex flex-col gap-1 py-2 border-b border-zinc-900/50 last:border-0">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-zinc-600 text-[10px]">▸</span>
-                              <span className={`text-xs font-bold ${cit.is_brand_citation ? 'text-emerald-400' : 'text-zinc-200'}`}>{cit.domain}</span>
-                              {cit.is_brand_citation && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wider">Own</span>}
-                            </div>
-                            <span className="text-xs font-bold text-zinc-400">{cit.count}</span>
+                      {report.brand_citations?.slice(0, 10).map((cit: any, idx: number) => {
+                        const isExpanded = expandedDomains.includes(cit.domain);
+                        const toggleDomain = () => setExpandedDomains(prev => 
+                          isExpanded ? prev.filter(d => d !== cit.domain) : [...prev, cit.domain]
+                        );
+
+                        return (
+                          <div key={idx} className="flex flex-col gap-1 py-2 border-b border-zinc-900/50 last:border-0">
+                            <button 
+                              onClick={toggleDomain}
+                              className="w-full flex items-center justify-between hover:bg-zinc-800/30 p-1.5 -mx-1.5 rounded transition"
+                            >
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? <ChevronDown className="h-3 w-3 text-zinc-500" /> : <ChevronRight className="h-3 w-3 text-zinc-500" />}
+                                <span className={`text-xs font-bold ${cit.is_brand_citation ? 'text-emerald-400' : 'text-zinc-200'}`}>{cit.domain}</span>
+                                {cit.is_brand_citation && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wider">Own</span>}
+                              </div>
+                              <span className="text-xs font-bold text-zinc-400">{cit.count}</span>
+                            </button>
+                            
+                            {isExpanded && cit.urls && cit.urls.length > 0 && (
+                              <div className="mt-2 space-y-2 pl-6 animate-in slide-in-from-top-1 fade-in duration-200">
+                                {cit.urls.map((u: any, uIdx: number) => (
+                                  <div key={uIdx} className="flex flex-col gap-1">
+                                    <div className="flex justify-between items-start gap-3">
+                                      <a href={u.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-zinc-400 hover:text-purple-400 transition truncate block max-w-[200px]" title={u.url}>
+                                        {u.title || u.url}
+                                      </a>
+                                      <span className="text-[10px] text-zinc-600 font-bold">{u.count}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1879,6 +1944,104 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ────────────────────────────────────────────────────────
+              TAB: QUERY DATA TRACKER
+             ──────────────────────────────────────────────────────── */}
+          {activeTab === "tracker" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* Prompts Selection List */}
+              <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 h-fit max-h-[800px] overflow-y-auto space-y-4">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Select Query</h3>
+                <div className="space-y-2">
+                  {prompts.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => fetchQueryTracker(p.id)}
+                      className={`w-full text-left p-3 rounded-xl border text-xs transition-all ${
+                        selectedTrackerPromptId === p.id 
+                        ? "bg-purple-900/20 border-purple-500/50 text-white" 
+                        : "bg-zinc-900/20 border-zinc-900 text-zinc-400 hover:bg-zinc-900/40 hover:text-zinc-200"
+                      }`}
+                    >
+                      <span className="block font-semibold mb-1">{p.prompt_text}</span>
+                      <span className="text-[10px] uppercase font-bold text-zinc-600">{p.intent} • {p.topic_cluster || 'General'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tracker Modal/Detail View */}
+              <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 lg:col-span-2 space-y-6 max-h-[800px] overflow-y-auto">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Tracker Details</h3>
+                
+                {!selectedTrackerPromptId && (
+                  <div className="h-64 flex items-center justify-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">
+                    Select a query from the left to view tracker data.
+                  </div>
+                )}
+                
+                {trackerLoading && (
+                  <div className="h-64 flex flex-col items-center justify-center space-y-4">
+                    <RefreshCw className="h-5 w-5 text-purple-500 animate-spin" />
+                    <span className="text-xs text-zinc-500">Fetching raw AI responses...</span>
+                  </div>
+                )}
+
+                {queryTrackerData && !trackerLoading && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div>
+                      <h4 className="text-lg font-bold text-white mb-4">{queryTrackerData.prompt_text}</h4>
+                      
+                      <div className="p-4 rounded-xl border border-purple-900/30 bg-purple-900/10">
+                        <h5 className="text-[11px] font-bold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Log Content Update</h5>
+                        <p className="text-xs text-zinc-300 leading-relaxed">
+                          {queryTrackerData.insight_log}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h5 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Raw AI Responses ({queryTrackerData.responses.length})</h5>
+                      
+                      {queryTrackerData.responses.map((r: any, idx: number) => {
+                        const isExpanded = expandedTrackerEngines.includes(`${r.engine}-${idx}`);
+                        const toggleEngine = () => setExpandedTrackerEngines(prev => 
+                          isExpanded ? prev.filter(x => x !== `${r.engine}-${idx}`) : [...prev, `${r.engine}-${idx}`]
+                        );
+
+                        return (
+                          <div key={idx} className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-950">
+                            <button 
+                              onClick={toggleEngine}
+                              className="w-full flex items-center justify-between p-4 bg-zinc-900/30 hover:bg-zinc-900/60 transition"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`h-2 w-2 rounded-full ${r.raw_text !== 'No response data' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                <span className="font-bold text-sm text-zinc-200 capitalize">{r.engine}</span>
+                                <span className="text-[10px] text-zinc-500 font-mono">{new Date(r.timestamp).toLocaleString()}</span>
+                              </div>
+                              {isExpanded ? <ChevronDown className="h-4 w-4 text-zinc-400" /> : <ChevronRight className="h-4 w-4 text-zinc-400" />}
+                            </button>
+                            
+                            {isExpanded && (
+                              <div className="p-4 border-t border-zinc-800">
+                                <div className="text-[11px] font-mono text-zinc-300 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                                  {r.raw_text}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>
