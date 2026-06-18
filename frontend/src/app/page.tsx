@@ -206,7 +206,7 @@ export default function Home() {
   const [discoverResult, setDiscoverResult] = useState<any>(null);
   const [onboardLoading, setOnboardLoading] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
-  const [selectedEngines, setSelectedEngines] = useState<string[]>(["google_ai", "perplexity"]);
+  const [selectedEngines, setSelectedEngines] = useState<string[]>(["google_ai", "perplexity", "openai", "claude", "gemini", "groq", "deepseek"]);
   const [numQueries, setNumQueries] = useState(10);
 
   // Remove fallback mode flag completely
@@ -2108,8 +2108,8 @@ export default function Home() {
           <div className="w-full max-w-4xl relative">
             <LiveTrackingConsole 
               apiKey={config.apiKey}
-              backendUrl={config.backendUrl}
-              enginesCount={selectedEngines.length || 6}
+              backendUrl={getApiUrl("")}
+              enginesCount={selectedEngines.length || 7}
               title="Manual Batch Run in Progress"
               subtitle="Executing active tracking across selected AI engines..."
               onComplete={async () => {
