@@ -294,12 +294,43 @@ class CitationBreakdown(BaseModel):
     count: int
     source_type: Optional[str] = None
     is_brand_citation: bool = False
+    urls: List[dict] = []  # Added for frontend accordion
 
 
 class AttributeBreakdown(BaseModel):
     attribute: str
     positive_pct: float
     sentiment: str
+
+
+class PlatformResponseSnippet(BaseModel):
+    date: str
+    query: str
+    is_mentioned: bool
+    raw_text: str
+
+
+class PlatformScorecardEntry(BaseModel):
+    platform: str
+    your_visibility: float
+    top_competitor: str
+    top_competitor_visibility: float
+    status: str
+    recent_responses: List[PlatformResponseSnippet] = []
+
+
+class TrackerResponseSnippet(BaseModel):
+    engine: str
+    timestamp: str
+    prompt_text: str
+    raw_text: str
+
+
+class QueryDataTrackerResponse(BaseModel):
+    prompt_id: str
+    prompt_text: str
+    insight_log: str
+    responses: List[TrackerResponseSnippet]
 
 
 class TopLevelShareOfVoice(BaseModel):

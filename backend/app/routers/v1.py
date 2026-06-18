@@ -138,6 +138,34 @@ def list_competitors(
     return result.data or []
 
 
+@router.get("/prompts", response_model=None)
+def list_prompts(
+    workspace: dict = Depends(get_current_workspace),
+    db: Client = Depends(get_supabase),
+):
+    """Get all prompts for the workspace."""
+    result = (
+        db.table("aeo_prompts")
+        .select("id, prompt_text, topic_cluster, intent")
+        .eq("workspace_id", workspace["id"])
+        .eq("is_active", True)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data or []
+
+
+@router.get("/prompts/{prompt_id}/tracker", response_model=None)
+async def query_tracker(
+    prompt_id: str,
+    workspace: dict = Depends(get_current_workspace),
+    db: Client = Depends(get_supabase),
+):
+    """Get in-depth query tracking data for a specific prompt."""
+    return await scoring.get_query_data_tracker(db, workspace["id"], prompt_id)
+
+
+
 @router.get("/competitors/sources")
 def get_competitor_sources(
     workspace: dict = Depends(get_current_workspace),

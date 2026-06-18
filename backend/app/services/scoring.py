@@ -320,7 +320,7 @@ def compute_citations(
 
     citations = (
         db.table("aeo_citations")
-        .select("domain, source_type")
+        .select("domain, source_type, url")
         .eq("workspace_id", workspace_id)
         .in_("run_id", run_ids)
         .execute()
@@ -332,8 +332,25 @@ def compute_citations(
     for c in citations:
         d = c["domain"]
         if d not in domain_counts:
-            domain_counts[d] = {"count": 0, "source_type": c.get("source_type")}
+            domain_counts[d] = {
+                "count": 0, 
+                "source_type": c.get("source_type"),
+                "urls": {}
+            }
         domain_counts[d]["count"] += 1
+        
+        url = c.get("url", d)
+        if url not in domain_counts[d]["urls"]:
+            # Format title from URL if possible, else just use domain
+            title = url.split("/")[-1].replace("-", " ").title() if "/" in url else url
+            if not title:
+                title = url
+            domain_counts[d]["urls"][url] = {
+                "url": url,
+                "title": title,
+                "count": 0
+            }
+        domain_counts[d]["urls"][url]["count"] += 1
 
     # Get workspace domain to flag brand citations
     ws = (
@@ -346,17 +363,20 @@ def compute_citations(
     )
     brand_domain = ws["domain"] if ws else ""
 
-    return [
-        CitationBreakdown(
+    result = []
+    for d, info in sorted(domain_counts.items(), key=lambda x: x[1]["count"], reverse=True):
+        urls_list = list(info["urls"].values())
+        urls_list.sort(key=lambda x: x["count"], reverse=True)
+        
+        result.append(CitationBreakdown(
             domain=d,
             count=info["count"],
             source_type=info.get("source_type"),
             is_brand_citation=(brand_domain in d),
-        )
-        for d, info in sorted(
-            domain_counts.items(), key=lambda x: x[1]["count"], reverse=True
-        )
-    ]
+            urls=urls_list
+        ))
+        
+    return result
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -741,4 +761,60 @@ async def build_full_report(
         recent_runs=recent_runs,
         iso_week=week,
         ai_insight=ai_insight,
+    )
+
+
+async def get_query_data_tracker(db: Client, workspace_id: str, prompt_id: str) -> QueryDataTrackerResponse:
+    from app.models.schemas import QueryDataTrackerResponse, TrackerResponseSnippet
+    # Fetch prompt details
+    prompt = db.table("aeo_prompts").select("prompt_text").eq("id", prompt_id).eq("workspace_id", workspace_id).single().execute().data
+    if not prompt:
+        raise ValueError("Prompt not found")
+
+    prompt_text = prompt["prompt_text"]
+
+    # Fetch recent runs for this prompt
+    runs = (
+        db.table("aeo_runs")
+        .select("engine, created_at, raw_response")
+        .eq("prompt_id", prompt_id)
+        .eq("workspace_id", workspace_id)
+        .eq("status", "complete")
+        .order("created_at", desc=True)
+        .execute()
+        .data or []
+    )
+
+    responses = []
+    engine_texts = []
+    
+    for r in runs:
+        responses.append(
+            TrackerResponseSnippet(
+                engine=r["engine"],
+                timestamp=r["created_at"],
+                prompt_text=prompt_text,
+                raw_text=r.get("raw_response", "") or "No response data"
+            )
+        )
+        engine_texts.append(f"[{r['engine']}] Response:\n{(r.get('raw_response', '') or '')[:500]}...")
+
+    # Generate an insight using the discovery service provider if possible
+    insight_log = f"Query Data Tracker initialized for: '{prompt_text}'. Found {len(runs)} recent engine responses."
+    
+    if engine_texts:
+        try:
+            from app.services.providers.base import get_provider, EngineType
+            provider = get_provider(EngineType.OPENAI) # default
+            prompt_for_llm = f"You are an SEO analyst. Provide a 1-2 sentence insightful summary of these AI responses for the prompt '{prompt_text}'. Focus on brand visibility and competitors mentioned.\n\n" + "\n\n".join(engine_texts)
+            res = await provider.query(prompt_for_llm)
+            insight_log = res.raw_text.strip()
+        except Exception:
+            pass
+
+    return QueryDataTrackerResponse(
+        prompt_id=prompt_id,
+        prompt_text=prompt_text,
+        insight_log=insight_log,
+        responses=responses
     )
