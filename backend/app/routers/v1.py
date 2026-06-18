@@ -239,6 +239,54 @@ def get_cluster_brief(
         refill_action=cluster.get("refill_action", "write-new"),
     )
 
+from app.services.content_analyzer import analyze_content_gaps
+from pydantic import BaseModel
+
+class ContentGapResponse(BaseModel):
+    brief_markdown: str
+    urls_analyzed: list[str]
+
+@router.get("/content/gaps", response_model=ContentGapResponse)
+async def get_content_gaps(
+    prompt_id: str,
+    workspace: dict = Depends(get_current_workspace),
+    db: Client = Depends(get_supabase),
+):
+    """PC-06: Scrape top cited URLs and generate organic content gap brief."""
+    ws_id = workspace["id"]
+
+    # 1. Get the prompt text
+    prompt_res = db.table("aeo_prompts").select("prompt_text").eq("id", prompt_id).eq("workspace_id", ws_id).execute()
+    if not prompt_res.data:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt_text = prompt_res.data[0]["prompt_text"]
+
+    # 2. Get top 5 unique cited URLs for this prompt across all recent runs
+    # Find all run IDs for this prompt
+    runs = db.table("aeo_runs").select("id").eq("prompt_id", prompt_id).eq("workspace_id", ws_id).execute().data or []
+    if not runs:
+        return ContentGapResponse(brief_markdown="No tracking data exists for this prompt yet. Please trigger a tracking run first.", urls_analyzed=[])
+    
+    run_ids = [r["id"] for r in runs]
+    
+    # Supabase Python client doesn't support generic 'in_' well sometimes, but we can try or fetch all and filter
+    citations = db.table("aeo_citations").select("url").eq("workspace_id", ws_id).in_("run_id", run_ids).execute().data or []
+    
+    unique_urls = list(set([c["url"] for c in citations if c.get("url")]))
+    # Filter out empty or obviously bad URLs, take top 5
+    urls_to_scrape = unique_urls[:5]
+
+    if not urls_to_scrape:
+        return ContentGapResponse(brief_markdown="No competitor citations found for this prompt. You might already own this space!", urls_analyzed=[])
+
+    # 3. Analyze content gaps
+    brief = await analyze_content_gaps(urls=urls_to_scrape, prompt_text=prompt_text, brand_name=workspace.get("brand_name", ""))
+
+    return ContentGapResponse(
+        brief_markdown=brief,
+        urls_analyzed=urls_to_scrape
+    )
+
 
 @router.get("/recommendations", response_model=list[Recommendation])
 def get_recommendations(

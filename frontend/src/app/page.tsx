@@ -145,7 +145,7 @@ const EnginePinger = ({ engines, onComplete }: { engines: string[], onComplete: 
 
 export default function Home() {
   // ── States ──────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"dashboard" | "workstreams" | "clusters" | "prompts" | "competitors" | "settings" | "tracker">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "workstreams" | "clusters" | "gaps" | "prompts" | "competitors" | "settings" | "tracker">("dashboard");
   const [config, setConfig] = useState<Config>({
     backendUrl: process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000"),
     apiKey: "gk_devprefix_devsecretkey123456789", // Dev API key seeded in DB
@@ -184,6 +184,11 @@ export default function Home() {
   const [briefLoading, setBriefLoading] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+
+  // Content Gaps states
+  const [gapsSelectedPrompt, setGapsSelectedPrompt] = useState<any>(null);
+  const [gapsBrief, setGapsBrief] = useState<any>(null);
+  const [gapsLoading, setGapsLoading] = useState(false);
 
   // Prompt creation states
   const [newPromptText, setNewPromptText] = useState("");
@@ -411,6 +416,24 @@ export default function Home() {
       console.error(err);
     } finally {
       setBriefLoading(false);
+    }
+  };
+
+  // ── Fetch Content Gaps Brief ──────────────────────────────────────────
+  const fetchGapsBrief = async (prompt: any) => {
+    setGapsSelectedPrompt(prompt);
+    setGapsLoading(true);
+    setGapsBrief(null);
+
+    try {
+      const headers = { "Authorization": `Bearer ${config.apiKey}` };
+      const res = await fetch(getApiUrl(`/v1/content/gaps?prompt_id=${prompt.id}`), { headers });
+      const data = await res.json();
+      setGapsBrief(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGapsLoading(false);
     }
   };
 
@@ -884,6 +907,17 @@ export default function Home() {
               }`}
             >
               <Layers className="h-4 w-4" />
+              Topic Clusters
+            </button>
+            <button
+              onClick={() => setActiveTab("gaps")}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === "gaps"
+                  ? "bg-zinc-900 text-white shadow-inner border border-zinc-800"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-900/50"
+              }`}
+            >
+              <FileText className="h-4 w-4" />
               Content Gaps Studio
             </button>
             <button
@@ -1785,6 +1819,98 @@ export default function Home() {
                         <div className="p-4 rounded-xl border border-zinc-900 bg-zinc-900/30 max-h-[400px] overflow-y-auto font-mono text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed">
                           {draft.body}
                         </div>
+                      </div>
+                    )}
+
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
+          {/* ────────────────────────────────────────────────────────
+              TAB: CONTENT GAPS STUDIO
+             ──────────────────────────────────────────────────────── */}
+          {activeTab === "gaps" && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+              
+              {/* Prompts List */}
+              <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Select Tracked Query</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-900 text-zinc-500">
+                        <th className="pb-3 font-semibold">Prompt Text</th>
+                        <th className="pb-3 font-semibold">Cluster</th>
+                        <th className="pb-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900/50 text-zinc-300">
+                      {prompts.map((p) => (
+                        <tr key={p.id} className="hover:bg-zinc-900/25 cursor-pointer" onClick={() => fetchGapsBrief(p)}>
+                          <td className="py-4 font-medium text-zinc-200">{p.prompt_text}</td>
+                          <td className="py-4">{p.topic_cluster || "Uncategorized"}</td>
+                          <td className="py-4 text-right">
+                            <ChevronRight className="h-4 w-4 text-zinc-600 inline" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Gaps Details Panel */}
+              <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6 min-h-[400px]">
+                {!gapsSelectedPrompt ? (
+                  <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-2 py-20">
+                    <FileText className="h-8 w-8 text-zinc-700" />
+                    <span className="text-xs text-center max-w-xs">Select a tracked query to scrape competitor citations and generate an AI content gap analysis.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
+                      <div>
+                        <h4 className="text-base font-bold text-white">{gapsSelectedPrompt.prompt_text}</h4>
+                        <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                          Organic Content Strategy
+                        </span>
+                      </div>
+                    </div>
+
+                    {gapsLoading && (
+                      <div className="flex flex-col items-center justify-center py-20 text-xs text-zinc-500 gap-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+                        <span className="text-center">Scraping competitor citations from Answer Engines<br/>and analyzing content gaps...</span>
+                      </div>
+                    )}
+
+                    {gapsBrief && !gapsLoading && (
+                      <div className="space-y-6">
+                        
+                        <div className="space-y-2">
+                          <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Competitor URLs Analyzed</span>
+                          <ul className="space-y-1 pl-4 text-xs">
+                            {gapsBrief.urls_analyzed?.map((u: string, idx: number) => (
+                              <li key={idx} className="truncate">
+                                <a href={u} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 hover:underline">{u}</a>
+                              </li>
+                            ))}
+                            {(!gapsBrief.urls_analyzed || gapsBrief.urls_analyzed.length === 0) && (
+                              <li className="text-zinc-500 italic">No valid citations found. Trigger a tracking run first.</li>
+                            )}
+                          </ul>
+                        </div>
+
+                        <div className="space-y-2">
+                          <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">AI Content Gap Brief</span>
+                          <div className="p-4 rounded-xl border border-zinc-900 bg-zinc-900/30 font-mono text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                            {gapsBrief.brief_markdown}
+                          </div>
+                        </div>
+
                       </div>
                     )}
 

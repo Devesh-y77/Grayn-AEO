@@ -1,0 +1,71 @@
+import httpx
+import asyncio
+from bs4 import BeautifulSoup
+from app.services.providers.gemini_provider import GeminiProvider
+import traceback
+
+async def scrape_url(url: str) -> str:
+    """Fetch and extract readable text from a URL."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            # Mask as a normal browser
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            }
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            # Remove scripts and styles
+            for script in soup(["script", "style", "nav", "footer", "aside"]):
+                script.decompose()
+                
+            text = soup.get_text(separator=' ', strip=True)
+            # Truncate to avoid blowing up context window (roughly 1500 words)
+            return text[:10000]
+    except Exception as e:
+        print(f"Failed to scrape {url}: {e}")
+        return ""
+
+
+async def analyze_content_gaps(urls: list[str], prompt_text: str, brand_name: str) -> str:
+    """
+    Scrape the URLs and ask Gemini to generate an organic content strategy.
+    """
+    if not urls:
+        return "No competitor URLs provided."
+
+    # Scrape all URLs concurrently
+    tasks = [scrape_url(u) for u in urls]
+    results = await asyncio.gather(*tasks)
+    
+    # Combine text
+    combined_text = ""
+    for idx, (url, text) in enumerate(zip(urls, results)):
+        if text:
+            combined_text += f"\n\n--- Source {idx+1}: {url} ---\n{text}\n"
+
+    if not combined_text.strip():
+        return "Failed to extract content from the provided URLs (they may block scraping or be inaccessible)."
+
+    system_prompt = (
+        "You are an expert SEO Content Strategist. Your client is '{brand_name}'. "
+        "The target keyword/topic is '{prompt_text}'. "
+        "Below is the scraped text from top-ranking competitor articles that AI engines currently cite for this topic. "
+        "Analyze the content carefully. What themes, headings, structures, and questions do these competitors cover? "
+        "Generate a highly-detailed 'Content Brief' for our client to write a better, more comprehensive organic article that covers all these gaps and differentiates them from the competitors. "
+        "Use markdown formatting with clear headings, bullet points, and an actionable strategy."
+    )
+
+    provider = GeminiProvider()
+    try:
+        # We can use the provider's `execute` method, passing the combined text as the query
+        response = await provider.execute(
+            prompt_text=f"COMPETITOR CONTENT:\n{combined_text}",
+            system_prompt=system_prompt.format(brand_name=brand_name, prompt_text=prompt_text),
+            model="gemini-2.5-flash"
+        )
+        return response.get("content", "Failed to generate strategy.")
+    except Exception as e:
+        traceback.print_exc()
+        return f"Error analyzing content gaps: {str(e)}"
