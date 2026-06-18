@@ -29,6 +29,8 @@ from app.models.schemas import (
     PlatformScorecardEntry,
     PlatformResponseSnippet,
     TopicPerformanceEntry,
+    QueryDataTrackerResponse,
+    TrackerResponseSnippet,
 )
 
 logger = logging.getLogger(__name__)
@@ -765,7 +767,6 @@ async def build_full_report(
 
 
 async def get_query_data_tracker(db: Client, workspace_id: str, prompt_id: str) -> QueryDataTrackerResponse:
-    from app.models.schemas import QueryDataTrackerResponse, TrackerResponseSnippet
     # Fetch prompt details
     prompt = db.table("aeo_prompts").select("prompt_text").eq("id", prompt_id).eq("workspace_id", workspace_id).single().execute().data
     if not prompt:
