@@ -273,8 +273,8 @@ async def get_content_gaps(
     citations = db.table("aeo_citations").select("url").eq("workspace_id", ws_id).in_("run_id", run_ids).execute().data or []
     
     unique_urls = list(set([c["url"] for c in citations if c.get("url")]))
-    # Filter out empty or obviously bad URLs, take top 5
-    urls_to_scrape = unique_urls[:5]
+    # Filter out empty or obviously bad URLs, take top 15 for diverse data
+    urls_to_scrape = unique_urls[:15]
 
     if not urls_to_scrape:
         return ContentGapResponse(brief_markdown="No competitor citations found for this prompt. You might already own this space!", urls_analyzed=[])
