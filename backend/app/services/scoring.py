@@ -25,6 +25,10 @@ from app.models.schemas import (
     FullReport,
     WorkspaceOut,
     RunOut,
+    TopLevelShareOfVoice,
+    PlatformScorecardEntry,
+    PlatformResponseSnippet,
+    TopicPerformanceEntry,
 )
 
 logger = logging.getLogger(__name__)
