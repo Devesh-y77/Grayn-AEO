@@ -25,7 +25,7 @@ class BaseProvider(ABC):
     engine: EngineType
 
     @abstractmethod
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
         """Send a prompt and return the engine's answer."""
         ...
 

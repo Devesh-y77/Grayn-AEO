@@ -11,6 +11,7 @@ CREATE TABLE workspaces (
     domain TEXT NOT NULL,
     aliases TEXT[],
     brand_context TEXT,
+    target_location TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
 );
 

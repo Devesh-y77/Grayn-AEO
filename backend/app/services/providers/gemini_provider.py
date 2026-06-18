@@ -20,14 +20,21 @@ class GeminiProvider(BaseProvider):
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel("gemini-2.0-flash")
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
+            full_prompt = (
+                f"You are a helpful assistant answering real customer questions. "
+                f"Include specific product/brand names and cite your sources with "
+                f"URLs where possible.\n\n"
+            )
+            if location:
+                full_prompt += f"Simulate a user searching from this location: {location}\n\n"
+            full_prompt += f"Question: {prompt}"
+
             # google-generativeai SDK is synchronous — wrap it to prevent blocking the event loop
             response = await asyncio.to_thread(
                 self.model.generate_content,
-                f"You are a helpful assistant answering real customer questions. "
-                f"Include specific product/brand names and cite your sources with "
-                f"URLs where possible.\n\nQuestion: {prompt}"
+                full_prompt
             )
 
             raw_text = response.text or ""

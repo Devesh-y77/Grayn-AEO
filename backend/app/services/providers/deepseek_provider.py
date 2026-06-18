@@ -22,17 +22,21 @@ class DeepSeekProvider(BaseProvider):
         )
         self.model = "deepseek-chat"
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+        system_content = (
+            "You are a helpful assistant answering real customer "
+            "questions. Include specific product/brand names and "
+            "cite your sources with URLs where possible."
+        )
+        if location:
+            system_content += f"\n\nSimulate a user searching from this location: {location}"
+
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a helpful assistant answering real customer "
-                        "questions. Include specific product/brand names and "
-                        "cite your sources with URLs where possible."
-                    ),
+                    "content": system_content,
                 },
                 {"role": "user", "content": prompt},
             ],

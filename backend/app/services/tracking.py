@@ -62,12 +62,13 @@ async def run_single_prompt(
 
     # ── Query the engine ─────────────────────────────────
     try:
+        target_location = workspace.get("target_location")
         provider = get_provider(engine)
         if hasattr(provider, "__aenter__"):
             async with provider as p:
-                result = await p.query(prompt["prompt_text"])
+                result = await p.query(prompt["prompt_text"], location=target_location)
         else:
-            result = await provider.query(prompt["prompt_text"])
+            result = await provider.query(prompt["prompt_text"], location=target_location)
     except Exception as exc:
         logger.error(
             "Engine %s failed for prompt %s: %s", engine.value, prompt_id, exc

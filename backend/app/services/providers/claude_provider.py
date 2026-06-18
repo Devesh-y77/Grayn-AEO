@@ -19,16 +19,20 @@ class ClaudeProvider(BaseProvider):
         self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = "claude-sonnet-4-6"
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
+            system_content = (
+                "You are a helpful assistant answering real customer questions. "
+                "Include specific product/brand names and cite your sources with "
+                "URLs where possible."
+            )
+            if location:
+                system_content += f"\n\nSimulate a user searching from this location: {location}"
+
             response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
-                system=(
-                    "You are a helpful assistant answering real customer questions. "
-                    "Include specific product/brand names and cite your sources with "
-                    "URLs where possible."
-                ),
+                system=system_content,
                 messages=[{"role": "user", "content": prompt}],
             )
 

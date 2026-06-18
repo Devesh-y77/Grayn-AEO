@@ -32,7 +32,7 @@ class BrowserProvider(BaseProvider):
                 ]
             )
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             await self._ensure_browser()
             context = await self._browser.new_context(
@@ -40,12 +40,17 @@ class BrowserProvider(BaseProvider):
             )
             page = await context.new_page()
             
+            # If location is provided, we append it to the query to guide the search engine
+            search_query = f"{prompt} in {location}" if location else prompt
+            
             try:
                 if self.engine == EngineType.GOOGLE_AI:
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
-                            await page.goto(f"https://www.google.com/search?q={prompt}", wait_until="networkidle")
+                            import urllib.parse
+                            q = urllib.parse.quote(search_query)
+                            await page.goto(f"https://www.google.com/search?q={q}", wait_until="networkidle")
                             try:
                                 await page.wait_for_selector("div[data-sgr-ai='1']", timeout=5000)
                             except:

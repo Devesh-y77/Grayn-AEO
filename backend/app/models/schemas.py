@@ -63,6 +63,7 @@ class WorkspaceOut(BaseModel):
     domain: str
     aliases: Optional[List[str]] = None
     brand_context: Optional[str] = None
+    target_location: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -71,6 +72,7 @@ class WorkspaceCreate(BaseModel):
     domain: str
     aliases: Optional[List[str]] = None
     brand_context: Optional[str] = None
+    target_location: Optional[str] = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -401,6 +403,7 @@ class Recommendation(BaseModel):
 class DiscoverRequest(BaseModel):
     url: str
     num_queries: Optional[int] = 5
+    target_location: Optional[str] = None
 
 
 class SuggestedQuery(BaseModel):
@@ -419,6 +422,7 @@ class DiscoverApply(BaseModel):
     competitors: List[CompetitorCreate]
     queries: List[SuggestedQuery]
     engines: List[EngineType] = Field(default_factory=list)
+    target_location: Optional[str] = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

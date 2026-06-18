@@ -955,11 +955,15 @@ async def onboard_workspace(
     ws_id = workspace["id"]
     
     # Update Workspace
-    db.table("workspaces").update({
+    update_data = {
         "brand_name": brand_name,
         "domain": domain,
         "aliases": [brand_name]
-    }).eq("id", ws_id).execute()
+    }
+    if body.target_location:
+        update_data["target_location"] = body.target_location
+        
+    db.table("workspaces").update(update_data).eq("id", ws_id).execute()
 
     # Clear old data (for clean onboarding)
     db.table("aeo_competitors").delete().eq("workspace_id", ws_id).execute()

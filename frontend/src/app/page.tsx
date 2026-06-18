@@ -200,11 +200,12 @@ export default function Home() {
   // Onboarding states
   const [isOnboarding, setIsOnboarding] = useState(false);
   const [discoverUrl, setDiscoverUrl] = useState("");
+  const [discoverLocation, setDiscoverLocation] = useState("");
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<any>(null);
   const [onboardLoading, setOnboardLoading] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
-  const [selectedEngines, setSelectedEngines] = useState<string[]>(["openai", "gemini"]);
+  const [selectedEngines, setSelectedEngines] = useState<string[]>(["google_ai", "perplexity"]);
   const [numQueries, setNumQueries] = useState(10);
 
   // Remove fallback mode flag completely
@@ -328,7 +329,7 @@ export default function Home() {
       const res = await fetch(urlToFetch, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: discoverUrl, num_queries: numQueries })
+        body: JSON.stringify({ url: discoverUrl, num_queries: numQueries, target_location: discoverLocation })
       });
       
       if (!res.ok) {
@@ -362,7 +363,8 @@ export default function Home() {
           ...(discoverResult?.suggested_competitors || [])
         ],
         queries: discoverResult?.suggested_queries || [],
-        engines: selectedEngines
+        engines: selectedEngines,
+        target_location: discoverLocation
       };
 
       const res = await fetch(getApiUrl("/v1/workspaces/onboard"), {
@@ -595,36 +597,53 @@ export default function Home() {
                   <h1 className="text-5xl font-extrabold tracking-tight text-white mb-4">Discover AI Visibility</h1>
                   <p className="text-zinc-400 text-xl">Enter your brand's website to automatically map your ecosystem.</p>
                 </div>
-                <form onSubmit={handleDiscover} className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800/80 shadow-2xl backdrop-blur-2xl flex gap-3 group focus-within:border-purple-500/50 focus-within:shadow-[0_0_30px_rgba(147,51,234,0.15)] transition-all">
-                  <div className="flex-1 flex items-center px-4 bg-zinc-950/50 rounded-xl border border-transparent group-focus-within:bg-zinc-950 transition-all">
-                    <Search className="h-6 w-6 text-zinc-500 mr-3" />
-                    <input
-                      type="text"
-                      placeholder="https://stripe.com"
-                      value={discoverUrl}
-                      onChange={(e) => setDiscoverUrl(e.target.value)}
-                      className="w-full bg-transparent border-none py-5 text-xl focus:outline-none text-white placeholder-zinc-700"
-                    />
-                    <div className="flex items-center gap-2 border-l border-zinc-800 pl-4 ml-2">
-                      <span className="text-xs text-zinc-500 font-semibold whitespace-nowrap">Queries:</span>
+                <form onSubmit={handleDiscover} className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800/80 shadow-2xl backdrop-blur-2xl flex flex-col gap-4 group focus-within:border-purple-500/50 focus-within:shadow-[0_0_30px_rgba(147,51,234,0.15)] transition-all">
+                  <div className="flex gap-3">
+                    <div className="flex-1 flex items-center px-4 bg-zinc-950/50 rounded-xl border border-transparent focus-within:bg-zinc-950 transition-all">
+                      <Search className="h-6 w-6 text-zinc-500 mr-3" />
                       <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={numQueries}
-                        onChange={(e) => setNumQueries(parseInt(e.target.value) || 10)}
-                        className="w-16 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-purple-500"
+                        type="text"
+                        placeholder="https://stripe.com"
+                        value={discoverUrl}
+                        onChange={(e) => setDiscoverUrl(e.target.value)}
+                        className="w-full bg-transparent border-none py-5 text-xl focus:outline-none text-white placeholder-zinc-700"
                       />
+                      <div className="flex items-center gap-2 border-l border-zinc-800 pl-4 ml-2">
+                        <span className="text-xs text-zinc-500 font-semibold whitespace-nowrap">Queries:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={numQueries}
+                          onChange={(e) => setNumQueries(parseInt(e.target.value) || 10)}
+                          className="w-16 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={discoverLoading || !discoverUrl.trim()}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold px-10 rounded-xl transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-purple-500/25"
-                  >
-                    {discoverLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
-                    Analyze
-                  </button>
+                  <div className="flex gap-3">
+                    <div className="flex-1 flex items-center px-4 bg-zinc-950/50 rounded-xl border border-transparent focus-within:bg-zinc-950 transition-all">
+                      <svg className="h-6 w-6 text-zinc-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Target Location (e.g. United States, New York)"
+                        value={discoverLocation}
+                        onChange={(e) => setDiscoverLocation(e.target.value)}
+                        className="w-full bg-transparent border-none py-4 text-lg focus:outline-none text-white placeholder-zinc-700"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={discoverLoading || !discoverUrl.trim()}
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold px-10 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 w-48"
+                    >
+                      {discoverLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
+                      Analyze
+                    </button>
+                  </div>
                 </form>
               </motion.div>
             )}

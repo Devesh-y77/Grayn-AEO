@@ -61,7 +61,7 @@ class MockProvider(BaseProvider):
     def __init__(self, engine: EngineType):
         self.engine = engine
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
         if "suggested_competitors" in prompt or "JSON" in prompt:
             # Return mock discovery JSON
             raw_text = '{"suggested_competitors": [{"brand_name": "Mock Competitor", "domain": "mock.com", "aliases": []}], "suggested_queries": [{"text": "best mock tools", "attributes": ["Mock"]}], "themes": ["Mocking"]}'
