@@ -17,6 +17,7 @@ import {
   Award,
   BookOpen,
   ChevronRight,
+  ChevronDown,
   Clipboard,
   Cpu,
   Database,
@@ -152,6 +153,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getCompetitorLink = (name: string) => {
+    if (!name || name === "N/A") return "#";
+    return `https://${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+  };
+
   // Core Data States
   const [workspace, setWorkspace] = useState<any>(null);
   const [report, setReport] = useState<any>({});
@@ -161,6 +167,7 @@ export default function Home() {
   const [clusters, setClusters] = useState<any[]>([]);
   const [competitors, setCompetitors] = useState<any[]>([]);
   const [compSources, setCompSources] = useState<Record<string, any[]>>({});
+  const [expandedPlatforms, setExpandedPlatforms] = useState<string[]>([]);
   
   // Interactive UI States
   const [selectedCluster, setSelectedCluster] = useState<any>(null);
@@ -1005,11 +1012,16 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 
                 {/* Stat 1: Brand AI Visibility */}
-                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-hidden group">
+                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-visible group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-purple-600/5 rounded-full blur-2xl group-hover:bg-purple-600/10 transition duration-200" />
-                  <div className="flex items-center justify-between text-zinc-500 mb-4">
+                  <div className="flex items-center justify-between text-zinc-500 mb-4 relative cursor-help">
                     <span className="text-xs font-bold uppercase tracking-wider">Brand AI Visibility</span>
                     <TrendingUp className="h-4 w-4 text-purple-400" />
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-zinc-800 text-zinc-300 text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center shadow-xl border border-zinc-700">
+                      Target brand citations in AI output
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                    </div>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-white">
@@ -1024,52 +1036,63 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-2">Target brand citations in AI output</p>
                 </div>
 
                 {/* Stat 2: Share of Voice */}
-                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-hidden group">
+                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-visible group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-600/5 rounded-full blur-2xl group-hover:bg-indigo-600/10 transition duration-200" />
-                  <div className="flex items-center justify-between text-zinc-500 mb-4">
+                  <div className="flex items-center justify-between text-zinc-500 mb-4 relative cursor-help">
                     <span className="text-xs font-bold uppercase tracking-wider">Share of Voice</span>
                     <Award className="h-4 w-4 text-indigo-400" />
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-zinc-800 text-zinc-300 text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center shadow-xl border border-zinc-700">
+                      Proportion of mentions vs competitors
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                    </div>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-white">
-                      {report.share_of_voice?.share_pct}%
+                      {report.share_of_voice?.share_pct !== undefined ? `${report.share_of_voice.share_pct}%` : "0%"}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-2">Proportion of mentions vs competitors</p>
                 </div>
 
                 {/* Stat 3: Average Position */}
-                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-hidden group">
+                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-visible group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-600/5 rounded-full blur-2xl group-hover:bg-emerald-600/10 transition duration-200" />
-                  <div className="flex items-center justify-between text-zinc-500 mb-4">
+                  <div className="flex items-center justify-between text-zinc-500 mb-4 relative cursor-help">
                     <span className="text-xs font-bold uppercase tracking-wider">Average Position</span>
                     <Layers className="h-4 w-4 text-emerald-400" />
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-zinc-800 text-zinc-300 text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center shadow-xl border border-zinc-700">
+                      Rank index in responses when mentioned
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                    </div>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-white">
                       {report.share_of_voice?.avg_position || 1.0}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-2">Rank index in responses when mentioned</p>
                 </div>
 
                 {/* Stat 4: Tracked Prompts */}
-                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-hidden group">
+                <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/20 backdrop-blur-xl hover:border-zinc-800 transition duration-150 relative overflow-visible group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-600/5 rounded-full blur-2xl group-hover:bg-amber-600/10 transition duration-200" />
-                  <div className="flex items-center justify-between text-zinc-500 mb-4">
+                  <div className="flex items-center justify-between text-zinc-500 mb-4 relative cursor-help">
                     <span className="text-xs font-bold uppercase tracking-wider">Active Queries</span>
                     <Database className="h-4 w-4 text-amber-400" />
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-zinc-800 text-zinc-300 text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center shadow-xl border border-zinc-700">
+                      Queries tracked for visibility analyses
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                    </div>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-white">
                       {prompts.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-2">Queries tracked for visibility analyses</p>
                 </div>
               </div>
 
@@ -1112,59 +1135,138 @@ export default function Home() {
                   <div className="p-6 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-6 overflow-x-auto">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                       Platform Scorecard
-                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px]">?</span>
+                      <div className="relative group cursor-help">
+                        <span className="w-4 h-4 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px]">?</span>
+                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-zinc-800 text-zinc-300 text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center shadow-xl border border-zinc-700">
+                          Visibility per engine compared to the top competitor. Click a row to see recent responses.
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                        </div>
+                      </div>
                     </h3>
-                    <table className="w-full text-left text-xs min-w-[600px]">
-                      <thead>
-                        <tr className="text-zinc-500 border-b border-zinc-900/50">
-                          <th className="pb-3 font-semibold uppercase tracking-wider">Platform</th>
-                          <th className="pb-3 font-semibold uppercase tracking-wider">Your Visibility</th>
-                          <th className="pb-3 font-semibold uppercase tracking-wider">Top Competitor</th>
-                          <th className="pb-3 font-semibold uppercase tracking-wider">Gap</th>
-                          <th className="pb-3 font-semibold uppercase tracking-wider text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-900/50">
-                        {report.platform_scorecard?.map((entry: any) => (
-                          <tr key={entry.platform} className="hover:bg-zinc-900/20">
-                            <td className="py-4 font-bold text-white">{entry.platform}</td>
-                            <td className="py-4">
-                              <div className="flex items-center gap-3 w-32">
-                                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${entry.your_visibility}%` }} />
+                    
+                    <div className="w-full text-left text-xs min-w-[600px] flex flex-col">
+                      <div className="flex text-zinc-500 border-b border-zinc-900/50 pb-3 font-semibold uppercase tracking-wider px-2">
+                        <div className="w-1/4">Platform</div>
+                        <div className="w-1/4">Your Visibility</div>
+                        <div className="w-1/4">Top Competitor</div>
+                        <div className="w-[15%]">Gap</div>
+                        <div className="w-[10%] text-right pr-4">Status</div>
+                      </div>
+
+                      <div className="flex flex-col divide-y divide-zinc-900/50">
+                        {report.platform_scorecard?.map((entry: any) => {
+                          const isExpanded = expandedPlatforms.includes(entry.platform);
+                          const toggleExpand = () => {
+                            setExpandedPlatforms(prev => 
+                              prev.includes(entry.platform) 
+                                ? prev.filter(p => p !== entry.platform) 
+                                : [...prev, entry.platform]
+                            );
+                          };
+                          return (
+                            <div key={entry.platform} className="flex flex-col">
+                              {/* Row Header (Clickable) */}
+                              <div 
+                                onClick={toggleExpand}
+                                className="flex items-center py-4 px-2 hover:bg-zinc-900/40 cursor-pointer transition-colors group"
+                              >
+                                <div className="w-1/4 font-bold text-white flex items-center gap-2">
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                                  )}
+                                  {entry.platform}
                                 </div>
-                                <span className="text-zinc-400 w-8">{entry.your_visibility}%</span>
-                              </div>
-                            </td>
-                            <td className="py-4">
-                              <div className="flex flex-col gap-1">
-                                <span className="text-zinc-500 text-[10px] uppercase font-bold">{entry.top_competitor}</span>
-                                <div className="flex items-center gap-3 w-32">
+                                <div className="w-1/4 flex items-center gap-3 pr-4">
                                   <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full bg-zinc-600" style={{ width: `${entry.top_competitor_visibility}%` }} />
+                                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${entry.your_visibility}%` }} />
                                   </div>
-                                  <span className="text-zinc-400 w-8">{entry.top_competitor_visibility}%</span>
+                                  <span className="text-zinc-400 w-8">{entry.your_visibility}%</span>
+                                </div>
+                                <div className="w-1/4 flex flex-col gap-1 pr-4">
+                                  <a 
+                                    href={getCompetitorLink(entry.top_competitor)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-zinc-500 text-[10px] uppercase font-bold hover:text-blue-400 hover:underline transition-colors w-fit"
+                                  >
+                                    {entry.top_competitor}
+                                  </a>
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                                      <div className="h-full rounded-full bg-zinc-600" style={{ width: `${entry.top_competitor_visibility}%` }} />
+                                    </div>
+                                    <span className="text-zinc-400 w-8">{entry.top_competitor_visibility}%</span>
+                                  </div>
+                                </div>
+                                <div className="w-[15%]">
+                                  <span className={`font-semibold ${entry.gap > 0 ? 'text-emerald-400' : entry.gap < 0 ? 'text-rose-400' : 'text-zinc-400'}`}>
+                                    {entry.gap > 0 ? '+' : ''}{entry.gap}
+                                  </span>
+                                </div>
+                                <div className="w-[10%] text-right pr-4">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                    entry.status === 'Leading' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                    entry.status === 'Behind' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                                    'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                                  }`}>
+                                    {entry.status}
+                                  </span>
                                 </div>
                               </div>
-                            </td>
-                            <td className="py-4">
-                              <span className={`font-semibold ${entry.gap > 0 ? 'text-emerald-400' : entry.gap < 0 ? 'text-rose-400' : 'text-zinc-400'}`}>
-                                {entry.gap > 0 ? '+' : ''}{entry.gap}
-                              </span>
-                            </td>
-                            <td className="py-4 text-right">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                                entry.status === 'Leading' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                entry.status === 'Behind' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                                'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
-                              }`}>
-                                {entry.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                              
+                              {/* Expanded Content Area */}
+                              <AnimatePresence>
+                                {isExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden bg-zinc-900/20 border-t border-zinc-900/50"
+                                  >
+                                    <div className="p-4 pl-10 space-y-4">
+                                      <h4 className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 flex items-center justify-between">
+                                        <span>Recent {entry.platform} Responses - Click to expand</span>
+                                      </h4>
+                                      {entry.recent_responses && entry.recent_responses.length > 0 ? (
+                                        <div className="space-y-3">
+                                          {entry.recent_responses.map((resp: any, idx: number) => (
+                                            <div key={idx} className="bg-zinc-950/50 border border-zinc-800/80 rounded-lg p-3 space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-zinc-500 font-mono">{resp.date}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm flex items-center gap-1 font-semibold ${
+                                                  resp.is_mentioned 
+                                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                                    : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                                                }`}>
+                                                  {resp.is_mentioned ? (
+                                                    <><Check className="w-3 h-3" /> mentioned</>
+                                                  ) : (
+                                                    <><div className="w-1.5 h-1.5 rounded-full bg-rose-500" /> not mentioned</>
+                                                  )}
+                                                </span>
+                                              </div>
+                                              <p className="italic text-zinc-400 text-xs">"{resp.query}"</p>
+                                              <p className="text-zinc-300 text-xs leading-relaxed line-clamp-3">
+                                                {resp.raw_text}
+                                              </p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-zinc-500 text-xs italic py-2">No recent runs available for this platform.</div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Competitive Landscape */}
@@ -1194,9 +1296,14 @@ export default function Home() {
                               <td className="py-4">
                                 <div className="flex items-center gap-3">
                                   <span className="text-zinc-600 font-bold w-4">{idx + 1}</span>
-                                  <span className={`font-bold ${isYou ? 'text-white' : 'text-zinc-300'}`}>
+                                  <a 
+                                    href={getCompetitorLink(entry.brand_name)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`font-bold hover:underline hover:text-blue-400 transition-colors ${isYou ? 'text-white' : 'text-zinc-300'}`}
+                                  >
                                     {entry.brand_name}
-                                  </span>
+                                  </a>
                                   {isYou && <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase tracking-wider">You</span>}
                                 </div>
                               </td>
