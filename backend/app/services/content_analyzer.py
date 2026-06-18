@@ -57,15 +57,23 @@ async def analyze_content_gaps(urls: list[str], prompt_text: str, brand_name: st
         "Use markdown formatting with clear headings, bullet points, and an actionable strategy."
     )
 
-    provider = GeminiProvider()
+    import google.generativeai as genai
+    from app.config import get_settings
+    
+    settings = get_settings()
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    
+    model = genai.GenerativeModel(
+        "gemini-2.0-flash",
+        system_instruction=system_prompt.format(brand_name=brand_name, prompt_text=prompt_text)
+    )
+    
     try:
-        # We can use the provider's `execute` method, passing the combined text as the query
-        response = await provider.execute(
-            prompt_text=f"COMPETITOR CONTENT:\n{combined_text}",
-            system_prompt=system_prompt.format(brand_name=brand_name, prompt_text=prompt_text),
-            model="gemini-2.5-flash"
+        response = await asyncio.to_thread(
+            model.generate_content,
+            f"COMPETITOR CONTENT:\n{combined_text}"
         )
-        return response.get("content", "Failed to generate strategy.")
+        return response.text or "Failed to generate strategy."
     except Exception as e:
         traceback.print_exc()
         return f"Error analyzing content gaps: {str(e)}"
