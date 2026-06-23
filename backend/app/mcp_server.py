@@ -50,6 +50,47 @@ async def handle_list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {},
             }
+        ),
+        types.Tool(
+            name="trigger_aeo_analysis",
+            description="Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the brand/company to analyze"
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "The geographic location to simulate searches from (e.g., 'New York')"
+                    },
+                    "queries": {
+                        "type": "integer",
+                        "description": "Number of queries to discover and track (e.g., 5)"
+                    },
+                    "models": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of AI models to check (e.g., ['gemini', 'openai'])"
+                    }
+                },
+                "required": ["url", "location", "queries", "models"]
+            }
+        ),
+        types.Tool(
+            name="get_content_gaps",
+            description="Generate a strategic content gap brief by analyzing top competitor URLs for a given topic.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "The target topic or keyword to analyze for content gaps"
+                    }
+                },
+                "required": ["topic"]
+            }
         )
     ]
 
@@ -84,6 +125,75 @@ async def handle_call_tool(
         elif name == "get_recommendations":
             recs = db.table("aeo_recommendations").select("content, engine, status").eq("workspace_id", workspace_id).execute().data
             return [types.TextContent(type="text", text=json.dumps(recs, indent=2))]
+            
+        elif name == "trigger_aeo_analysis":
+            url = arguments.get("url")
+            location = arguments.get("location")
+            queries_count = arguments.get("queries", 5)
+            models = arguments.get("models", ["openai"])
+            
+            from app.services.discovery import run_discovery
+            from app.services.providers.base import get_provider, EngineType
+            from app.services.judge import extract_mentions_and_citations
+            import asyncio
+            
+            discovery = await run_discovery(url, num_queries=queries_count)
+            brand_name = discovery.get("brand_name", url)
+            suggested_queries = [q["text"] for q in discovery.get("suggested_queries", [])]
+            
+            async def run_single(query_text, engine_str):
+                try:
+                    eng = EngineType(engine_str.lower())
+                    provider = get_provider(eng)
+                    if hasattr(provider, "__aenter__"):
+                        async with provider as p:
+                            res = await p.query(query_text, location=location)
+                    else:
+                        res = await provider.query(query_text, location=location)
+                    
+                    ext = await extract_mentions_and_citations(res.raw_text, brand_name)
+                    return {
+                        "query": query_text,
+                        "engine": engine_str,
+                        "mentions": [m.dict() for m in ext.mentions],
+                        "citations": [c.dict() for c in ext.citations]
+                    }
+                except Exception as e:
+                    return {"query": query_text, "engine": engine_str, "error": str(e)}
+            
+            tasks = [run_single(q, m) for q in suggested_queries for m in models]
+            results = await asyncio.gather(*tasks)
+            
+            return [types.TextContent(type="text", text=json.dumps({
+                "brand_name": brand_name,
+                "location": location,
+                "analysis": results
+            }, indent=2))]
+            
+        elif name == "get_content_gaps":
+            topic = arguments.get("topic")
+            
+            # Find the prompt id for this topic
+            prompt_data = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute()
+            if not prompt_data.data:
+                return [types.TextContent(type="text", text=f"Could not find any existing tracking data for topic: {topic}")]
+            
+            prompt_id = prompt_data.data[0]["id"]
+            
+            # Fetch top cited URLs for this prompt
+            citations = db.table("aeo_citations").select("url").eq("prompt_id", prompt_id).limit(10).execute()
+            urls = list(set([c["url"] for c in citations.data if c["url"]]))
+            
+            if not urls:
+                return [types.TextContent(type="text", text=f"No competitor URLs have been cited for this topic yet.")]
+            
+            ws_data = db.table("workspaces").select("brand_name").eq("id", workspace_id).execute()
+            brand = ws_data.data[0]["brand_name"] if ws_data.data else "Your Brand"
+            
+            from app.services.content_analyzer import analyze_content_gaps
+            strategy = await analyze_content_gaps(urls, topic, brand)
+            
+            return [types.TextContent(type="text", text=strategy)]
             
         else:
             raise ValueError(f"Unknown tool: {name}")
