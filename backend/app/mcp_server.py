@@ -143,7 +143,13 @@ async def handle_call_tool(
             
             async def run_single(query_text, engine_str):
                 try:
-                    eng = EngineType(engine_str.lower())
+                    eng_str = engine_str.lower()
+                    if eng_str in ("chatgpt", "gpt", "chat-gpt"):
+                        eng_str = "openai"
+                    elif eng_str in ("claude", "claude3", "claude-3"):
+                        eng_str = "anthropic"
+                        
+                    eng = EngineType(eng_str)
                     provider = get_provider(eng)
                     if hasattr(provider, "__aenter__"):
                         async with provider as p:
