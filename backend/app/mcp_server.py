@@ -164,11 +164,46 @@ async def handle_call_tool(
             tasks = [run_single(q, m) for q in suggested_queries for m in models]
             results = await asyncio.gather(*tasks)
             
-            return [types.TextContent(type="text", text=json.dumps({
-                "brand_name": brand_name,
-                "location": location,
-                "analysis": results
-            }, indent=2))]
+            markdown_output = f"# AEO Analysis Report for {brand_name}\n"
+            markdown_output += f"**Location:** {location or 'Global'}\n\n"
+            
+            for res in results:
+                markdown_output += f"## 🔍 Query: \"{res.get('query')}\"\n"
+                markdown_output += f"**Engine:** {res.get('engine', 'Unknown').upper()}\n\n"
+                
+                if "error" in res:
+                    markdown_output += f"❌ **Error:** {res['error']}\n\n"
+                    markdown_output += "---\n\n"
+                    continue
+                    
+                markdown_output += "### 🏆 Brand Visibility Rankings\n"
+                if not res.get("mentions"):
+                    markdown_output += "*No brands were explicitly extracted for this query.*\n"
+                else:
+                    for m in res["mentions"]:
+                        b_name = m.get('brand_name', 'Unknown')
+                        pos = m.get('position', 'N/A')
+                        
+                        # Add simple emoji based on sentiment
+                        sent = m.get('sentiment', 'neutral')
+                        sent_emoji = "🟢" if sent == "positive" else "🔴" if sent == "negative" else "⚪"
+                        
+                        markdown_output += f"- **#{pos}** {b_name} {sent_emoji} ({sent})\n"
+                        for attr in m.get('attributes', []):
+                            attr_sent = attr.get('sentiment', 'neutral')
+                            attr_emoji = "✅" if attr_sent == "positive" else "❌" if attr_sent == "negative" else "➖"
+                            markdown_output += f"  - {attr_emoji} *{attr.get('name')}*\n"
+                
+                markdown_output += "\n### 🔗 Cited Sources\n"
+                if not res.get("citations"):
+                    markdown_output += "*No citations were provided by the engine.*\n"
+                else:
+                    for c in res["citations"]:
+                        markdown_output += f"- [{c.get('domain', 'Link')}]({c.get('url', '#')})\n"
+                
+                markdown_output += "\n---\n\n"
+
+            return [types.TextContent(type="text", text=markdown_output)]
             
         elif name == "get_content_gaps":
             topic = arguments.get("topic")
