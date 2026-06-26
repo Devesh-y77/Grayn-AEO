@@ -143,13 +143,19 @@ async def handle_call_tool(
             
             async def run_single(query_text, engine_str):
                 try:
-                    eng_str = engine_str.lower()
-                    if eng_str in ("chatgpt", "gpt", "chat-gpt"):
-                        eng_str = "openai"
-                    elif eng_str in ("claude", "claude3", "claude-3"):
-                        eng_str = "anthropic"
-                        
-                    eng = EngineType(eng_str)
+                    # Smart Engine Mapper
+                    n = engine_str.lower().strip()
+                    mapping = {
+                        "chatgpt": "openai", "gpt": "openai", "gpt-4": "openai", "gpt4": "openai", 
+                        "openai": "openai",
+                        "anthropic": "claude", "claude": "claude", "claude3": "claude", "claude-3": "claude",
+                        "gemini": "gemini", "google": "gemini", "bard": "gemini",
+                        "perplexity": "perplexity", "sonar": "perplexity",
+                        "deepseek": "deepseek", "groq": "groq", "grok": "grok", "xai": "grok"
+                    }
+                    mapped_eng_str = mapping.get(n, n)
+                    
+                    eng = EngineType(mapped_eng_str)
                     provider = get_provider(eng)
                     if hasattr(provider, "__aenter__"):
                         async with provider as p:
@@ -160,7 +166,7 @@ async def handle_call_tool(
                     ext = await extract_mentions_and_citations(res.raw_text, brand_name)
                     return {
                         "query": query_text,
-                        "engine": engine_str,
+                        "engine": mapped_eng_str,
                         "mentions": [m.dict() for m in ext.mentions],
                         "citations": [c.dict() for c in ext.citations]
                     }
@@ -170,46 +176,50 @@ async def handle_call_tool(
             tasks = [run_single(q, m) for q in suggested_queries for m in models]
             results = await asyncio.gather(*tasks)
             
-            markdown_output = f"# AEO Analysis Report for {brand_name}\n"
-            markdown_output += f"**Location:** {location or 'Global'}\n\n"
+            markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
+            markdown_output += f"*Location:* {location or 'Global'}\n\n"
             
             for res in results:
-                markdown_output += f"## 🔍 Query: \"{res.get('query')}\"\n"
-                markdown_output += f"**Engine:** {res.get('engine', 'Unknown').upper()}\n\n"
+                markdown_output += f"🔍 **Query:** \"{res.get('query')}\" (via {res.get('engine', 'Unknown').title()})\n"
                 
                 if "error" in res:
-                    markdown_output += f"❌ **Error:** {res['error']}\n\n"
-                    markdown_output += "---\n\n"
+                    markdown_output += f"⚠️ *Error: {res['error']}*\n\n---\n\n"
                     continue
                     
-                markdown_output += "### 🏆 Brand Visibility Rankings\n"
                 if not res.get("mentions"):
-                    markdown_output += "*No brands were explicitly extracted for this query.*\n"
+                    markdown_output += "*No clear brand visibility found for this query.*\n"
                 else:
                     for m in res["mentions"]:
                         b_name = m.get('brand_name', 'Unknown')
-                        pos = m.get('position', 'N/A')
+                        pos = m.get('position', '-')
                         
-                        # Add simple emoji based on sentiment
-                        sent = m.get('sentiment', 'neutral')
+                        # Fix enum printing issue
+                        raw_sent = m.get('sentiment', 'neutral')
+                        sent = raw_sent.value if hasattr(raw_sent, 'value') else str(raw_sent).split('.')[-1].lower()
                         sent_emoji = "🟢" if sent == "positive" else "🔴" if sent == "negative" else "⚪"
                         
-                        markdown_output += f"- **#{pos}** {b_name} {sent_emoji} ({sent})\n"
-                        for attr in m.get('attributes', []):
-                            attr_sent = attr.get('sentiment', 'neutral')
-                            attr_emoji = "✅" if attr_sent == "positive" else "❌" if attr_sent == "negative" else "➖"
-                            markdown_output += f"  - {attr_emoji} *{attr.get('name')}*\n"
+                        # Flatten attributes into a nice comma-separated list
+                        attrs = m.get('attributes', [])
+                        if attrs:
+                            attr_names = [a.get('name') for a in attrs if a.get('name')]
+                            attr_str = f" • *{', '.join(attr_names)}*"
+                        else:
+                            attr_str = ""
+                            
+                        markdown_output += f"{pos}. **{b_name}** {sent_emoji}{attr_str}\n"
                 
-                markdown_output += "\n### 🔗 Cited Sources\n"
-                if not res.get("citations"):
-                    markdown_output += "*No citations were provided by the engine.*\n"
-                else:
+                if res.get("citations"):
+                    markdown_output += f"\n🔗 **Sources:** "
+                    links = []
                     for c in res["citations"]:
-                        markdown_output += f"- [{c.get('domain', 'Link')}]({c.get('url', '#')})\n"
+                        domain = c.get('domain', 'Link').replace('www.', '')
+                        url = c.get('url', '#')
+                        links.append(f"<{url}|{domain}>") # Slack specific hyperlink format
+                    markdown_output += " | ".join(links) + "\n"
                 
                 markdown_output += "\n---\n\n"
 
-            return [types.TextContent(type="text", text=markdown_output)]
+            return [types.TextContent(type="text", text=markdown_output.strip())]
             
         elif name == "get_content_gaps":
             topic = arguments.get("topic")
