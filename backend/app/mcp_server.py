@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 server = Server("grayn-aeo-mcp")
 
+# In-memory cache to remember the last searched URL per workspace
+LAST_SEARCHED_URLS: dict[str, str] = {}
+
+
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
     """List available AEO tracking tools."""
@@ -72,10 +76,9 @@ async def handle_list_tools() -> list[types.Tool]:
                     "models": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of AI models to check (e.g., ['gemini', 'openai'])"
+                        "description": "Optional. List of AI models to check (e.g., ['gemini', 'openai'])"
                     }
-                },
-                "required": ["url", "location", "queries", "models"]
+                }
             }
         ),
         types.Tool(
@@ -140,10 +143,21 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(recs, indent=2))]
             
         elif name == "trigger_aeo_analysis":
-            url = arguments.get("url")
-            location = arguments.get("location")
-            queries_count = arguments.get("queries", 5)
-            models = arguments.get("models", ["openai"])
+            args = arguments or {}
+            url = args.get("url")
+            
+            # State-memory feature: fallback to the last searched URL if user didn't provide one
+            if not url:
+                url = LAST_SEARCHED_URLS.get(str(workspace_id))
+                if not url:
+                    return [types.TextContent(type="text", text="Error: Missing 'url'. Please specify a URL to analyze since there is no previous search history.")]
+            
+            # Save to memory for future queries
+            LAST_SEARCHED_URLS[str(workspace_id)] = url
+            
+            location = args.get("location") or "USA"
+            queries_count = args.get("queries") or 3
+            models = args.get("models") or ["openai", "deepseek"]
             
             from app.services.discovery import run_discovery
             from app.services.providers.base import get_provider, EngineType
