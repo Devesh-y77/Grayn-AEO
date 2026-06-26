@@ -116,7 +116,20 @@ async def handle_call_tool(
                 return [types.TextContent(type="text", text="Missing iso_week argument.")]
             
             runs = db.table("aeo_runs").select("engine, status, cost_usd").eq("workspace_id", workspace_id).eq("iso_week", iso_week).execute().data
-            return [types.TextContent(type="text", text=json.dumps({"iso_week": iso_week, "runs_count": len(runs), "runs": runs}, indent=2))]
+            
+            md = f"📊 **Visibility Report for {iso_week}**\n"
+            md += f"*Total Runs this week:* {len(runs)}\n\n"
+            
+            if not runs:
+                md += "*No data has been recorded in the database for this week yet.*\n"
+            else:
+                md += "| Engine | Status | Cost (USD) |\n"
+                md += "|---|---|---|\n"
+                for r in runs:
+                    cost = r.get('cost_usd') or 0
+                    md += f"| {str(r.get('engine', 'N/A')).title()} | {r.get('status', 'N/A')} | ${cost:.4f} |\n"
+            
+            return [types.TextContent(type="text", text=md)]
             
         elif name == "list_workstreams":
             ws = db.table("aeo_workstreams").select("name, target_visibility, topics, attribute_filters").eq("workspace_id", workspace_id).execute().data
