@@ -23,7 +23,7 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="get_visibility_report",
-            description="DO NOT use this tool for competitor comparisons or rankings. ONLY use this to get the total number of API runs and their financial costs for a specific week.",
+            description="Get the AI visibility report for a workspace for a specific week",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -53,29 +53,29 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="trigger_aeo_analysis",
-            description="USE THIS TOOL WHENEVER the user asks for scores, analysis, competitor tracking, brand visibility, or AEO rankings for a brand/URL. Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility.",
+            description="Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The URL of the brand/company to analyze. If the user doesn't provide one, guess it from context."
+                        "description": "The URL of the brand/company to analyze"
                     },
                     "location": {
                         "type": "string",
-                        "description": "Optional. The geographic location (default: 'USA')"
+                        "description": "The geographic location to simulate searches from (e.g., 'New York')"
                     },
                     "queries": {
                         "type": "integer",
-                        "description": "Optional. Number of queries to discover (default: 3)"
+                        "description": "Number of queries to discover and track (e.g., 5)"
                     },
                     "models": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional. AI models to check (default: ['openai', 'deepseek'])"
+                        "description": "List of AI models to check (e.g., ['gemini', 'openai'])"
                     }
                 },
-                "required": ["url"]
+                "required": ["url", "location", "queries", "models"]
             }
         ),
         types.Tool(
@@ -141,11 +141,9 @@ async def handle_call_tool(
             
         elif name == "trigger_aeo_analysis":
             url = arguments.get("url")
-            if not url:
-                return [types.TextContent(type="text", text="Error: Missing 'url'. Please specify a URL to analyze.")]
-            location = arguments.get("location") or "USA"
-            queries_count = arguments.get("queries") or 3
-            models = arguments.get("models") or ["openai", "deepseek"]
+            location = arguments.get("location")
+            queries_count = arguments.get("queries", 5)
+            models = arguments.get("models", ["openai"])
             
             from app.services.discovery import run_discovery
             from app.services.providers.base import get_provider, EngineType
