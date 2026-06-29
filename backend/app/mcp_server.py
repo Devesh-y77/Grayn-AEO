@@ -206,50 +206,53 @@ async def handle_call_tool(
             markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
             markdown_output += f"*Location:* {location or 'Global'}\n\n"
             
+            from collections import defaultdict
+            grouped_results = defaultdict(list)
             for res in results:
-                markdown_output += f"🔍 **Query:** \"{res.get('query')}\" (via {res.get('engine', 'Unknown').title()})\n"
+                grouped_results[res.get('query')].append(res)
                 
-                if "error" in res:
-                    markdown_output += f"⚠️ *Error: {res['error']}*\n\n---\n\n"
-                    continue
+            for query, engine_results in grouped_results.items():
+                markdown_output += f"🔍 **For \"{query}\"**\n"
+                
+                target_wins = []
+                target_losses = []
+                competitors = {}
+                
+                for res in engine_results:
+                    engine_name = res.get('engine', 'Unknown').title()
                     
-                if not res.get("mentions"):
-                    markdown_output += "*No clear brand visibility found for this query.*\n"
-                else:
-                    # Limit to Top 5 brands to prevent Slack wall-of-text
-                    top_mentions = res["mentions"][:5]
-                    for m in top_mentions:
-                        is_target = m.get('is_target_brand', False)
-                        b_name = m.get('brand_name', 'Unknown')
-                        pos = m.get('position', '-')
+                    if "error" in res:
+                        target_losses.append(engine_name)
+                        continue
                         
-                        # Fix enum printing issue
-                        raw_sent = m.get('sentiment', 'neutral')
-                        sent = raw_sent.value if hasattr(raw_sent, 'value') else str(raw_sent).split('.')[-1].lower()
-                        sent_emoji = "🟢" if sent == "positive" else "🔴" if sent == "negative" else "⚪"
+                    mentions = res.get('mentions', [])
+                    target_mention = next((m for m in mentions if m.get('is_target_brand')), None)
+                    
+                    if target_mention:
+                        pos = target_mention.get('position', '-')
+                        target_wins.append(f"✅ {engine_name} (cited #{pos})")
+                    else:
+                        target_losses.append(engine_name)
                         
-                        # Flatten attributes into a nice comma-separated list
-                        attrs = m.get('attributes', [])
-                        if attrs:
-                            attr_names = [a.get('name') for a in attrs if a.get('name')]
-                            attr_str = f" • *{', '.join(attr_names)}*"
-                        else:
-                            attr_str = ""
+                    for m in mentions:
+                        if not m.get('is_target_brand'):
+                            c_name = m.get('brand_name', 'Unknown')
+                            competitors[c_name] = competitors.get(c_name, 0) + 1
                             
-                        if is_target:
-                            markdown_output += f"👉 **{pos}. {b_name}** {sent_emoji}{attr_str}\n"
-                        else:
-                            markdown_output += f"{pos}. {b_name} {sent_emoji}{attr_str}\n"
+                total_engines = len(engine_results)
+                win_count = len(target_wins)
+                markdown_output += f"You're in {win_count} of {total_engines} engines.\n"
                 
-                if res.get("citations"):
-                    markdown_output += f"\n🔗 **Sources:** "
-                    links = []
-                    for c in res["citations"][:5]:
-                        domain = c.get('domain', 'Link').replace('www.', '')
-                        url = c.get('url', '#')
-                        links.append(f"<{url}|{domain}>") # Slack specific hyperlink format
-                    markdown_output += " | ".join(links) + "\n"
-                
+                if target_wins:
+                    markdown_output += " · ".join(target_wins) + "\n"
+                if target_losses:
+                    markdown_output += f"❌ {', '.join(target_losses)} — not cited.\n"
+                    
+                if competitors:
+                    sorted_comps = sorted(competitors.items(), key=lambda x: x[1], reverse=True)
+                    top_comps = [c[0] for c in sorted_comps[:3]]
+                    markdown_output += f"🏆 **Winning it:** {', '.join(top_comps)}\n"
+                    
                 markdown_output += "\n---\n\n"
 
             return [types.TextContent(type="text", text=markdown_output.strip())]
