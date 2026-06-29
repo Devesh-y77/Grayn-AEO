@@ -19,6 +19,8 @@ server = Server("grayn-aeo-mcp")
 
 # In-memory cache to remember the last searched URL per workspace
 LAST_SEARCHED_URLS: dict[str, str] = {}
+LAST_SEARCHED_TOPICS: dict[str, str] = {}
+LAST_SEARCHED_CITATIONS: dict[str, list[str]] = {}
 
 
 @server.list_tools()
@@ -89,10 +91,9 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "description": "The target topic or keyword to analyze for content gaps"
+                        "description": "Optional. The target topic or keyword to analyze. Leave blank to use the topic from your last live analysis."
                     }
-                },
-                "required": ["topic"]
+                }
             }
         )
     ]
@@ -211,6 +212,16 @@ async def handle_call_tool(
             for res in results:
                 grouped_results[res.get('query')].append(res)
                 
+            if grouped_results:
+                first_query = list(grouped_results.keys())[0]
+                LAST_SEARCHED_TOPICS[str(workspace_id)] = first_query
+                all_citations = []
+                for res in grouped_results[first_query]:
+                    for c in res.get('citations', []):
+                        if c.get('url'):
+                            all_citations.append(c.get('url'))
+                LAST_SEARCHED_CITATIONS[str(workspace_id)] = list(set(all_citations))
+                
             for query, engine_results in grouped_results.items():
                 markdown_output += f"🔍 **For \"{query}\"**\n"
                 
@@ -260,17 +271,24 @@ async def handle_call_tool(
         elif name == "get_content_gaps":
             topic = arguments.get("topic")
             
-            # Find the prompt id for this topic
+            # State-memory fallback
+            if not topic:
+                topic = LAST_SEARCHED_TOPICS.get(str(workspace_id))
+                if not topic:
+                    return [types.TextContent(type="text", text="Error: Missing 'topic'. Please specify a topic or run a live analysis first.")]
+                    
+            urls = []
+            # First try DB
             prompt_data = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute()
-            if not prompt_data.data:
-                return [types.TextContent(type="text", text=f"Could not find any existing tracking data for topic: {topic}")]
+            if prompt_data.data:
+                prompt_id = prompt_data.data[0]["id"]
+                citations = db.table("aeo_citations").select("url").eq("prompt_id", prompt_id).limit(10).execute()
+                urls = list(set([c["url"] for c in citations.data if c["url"]]))
             
-            prompt_id = prompt_data.data[0]["id"]
-            
-            # Fetch top cited URLs for this prompt
-            citations = db.table("aeo_citations").select("url").eq("prompt_id", prompt_id).limit(10).execute()
-            urls = list(set([c["url"] for c in citations.data if c["url"]]))
-            
+            # Fallback to live cache if not in DB
+            if not urls and topic == LAST_SEARCHED_TOPICS.get(str(workspace_id)):
+                urls = LAST_SEARCHED_CITATIONS.get(str(workspace_id), [])
+                
             if not urls:
                 return [types.TextContent(type="text", text=f"No competitor URLs have been cited for this topic yet.")]
             
