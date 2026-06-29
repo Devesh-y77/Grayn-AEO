@@ -216,7 +216,10 @@ async def handle_call_tool(
                 if not res.get("mentions"):
                     markdown_output += "*No clear brand visibility found for this query.*\n"
                 else:
-                    for m in res["mentions"]:
+                    # Limit to Top 5 brands to prevent Slack wall-of-text
+                    top_mentions = res["mentions"][:5]
+                    for m in top_mentions:
+                        is_target = m.get('is_target_brand', False)
                         b_name = m.get('brand_name', 'Unknown')
                         pos = m.get('position', '-')
                         
@@ -233,12 +236,15 @@ async def handle_call_tool(
                         else:
                             attr_str = ""
                             
-                        markdown_output += f"{pos}. **{b_name}** {sent_emoji}{attr_str}\n"
+                        if is_target:
+                            markdown_output += f"👉 **{pos}. {b_name}** {sent_emoji}{attr_str}\n"
+                        else:
+                            markdown_output += f"{pos}. {b_name} {sent_emoji}{attr_str}\n"
                 
                 if res.get("citations"):
                     markdown_output += f"\n🔗 **Sources:** "
                     links = []
-                    for c in res["citations"]:
+                    for c in res["citations"][:5]:
                         domain = c.get('domain', 'Link').replace('www.', '')
                         url = c.get('url', '#')
                         links.append(f"<{url}|{domain}>") # Slack specific hyperlink format

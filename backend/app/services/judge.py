@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 
 # ── System prompt for the judge ───────────────────────────
 
-JUDGE_SYSTEM_PROMPT = """You are a precise data extraction agent. Given an AI assistant's answer, extract:
+JUDGE_SYSTEM_PROMPT = """You are a precise data extraction agent. Given an AI assistant's answer, extract a MAXIMUM of the top 5 most prominent competitors/brands.
+CRITICAL: Do NOT extract irrelevant products, generic nouns, or unassociated businesses (e.g., do not extract yogurt brands, strollers, or hospitals if the query is about fitness).
 
-1. **Mentions**: Every brand/product/company mentioned.
+1. **Mentions**: Extract up to 5 brands/companies mentioned.
    - brand_name: exact name as written
    - is_target_brand: true if it matches the target brand (given below)
    - position: order of first appearance (1 = mentioned first)
