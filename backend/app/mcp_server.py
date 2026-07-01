@@ -289,7 +289,62 @@ async def handle_call_tool(
                             all_citations.append(c.get('url'))
                 LAST_SEARCHED_CITATIONS[str(workspace_id)] = list(set(all_citations))
                 
+            from datetime import datetime
+            iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]}"
+            
             for query, engine_results in grouped_results.items():
+                # 1. Insert or get prompt
+                p_resp = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).eq("prompt_text", query).execute()
+                if p_resp.data:
+                    prompt_id = p_resp.data[0]["id"]
+                else:
+                    p_resp = db.table("aeo_prompts").insert({
+                        "workspace_id": workspace_id,
+                        "prompt_text": query,
+                        "intent": "live_scan"
+                    }).execute()
+                    prompt_id = p_resp.data[0]["id"]
+                
+                # 2. Insert runs and mentions
+                for res in engine_results:
+                    engine_name = res.get('engine', 'Unknown')
+                    
+                    r_resp = db.table("aeo_runs").insert({
+                        "workspace_id": workspace_id,
+                        "prompt_id": prompt_id,
+                        "engine": engine_name,
+                        "iso_week": iso_week,
+                        "status": "error" if "error" in res else "complete",
+                        "cost_usd": 0.001
+                    }).execute()
+                    
+                    if r_resp.data and "error" not in res:
+                        run_id = r_resp.data[0]["id"]
+                        
+                        mentions_to_insert = []
+                        for m in res.get('mentions', []):
+                            mentions_to_insert.append({
+                                "workspace_id": workspace_id,
+                                "run_id": run_id,
+                                "brand_name": m.get('brand_name'),
+                                "is_target_brand": m.get('is_target_brand', False),
+                                "position": m.get('position')
+                            })
+                        if mentions_to_insert:
+                            db.table("aeo_mentions").insert(mentions_to_insert).execute()
+                            
+                        citations_to_insert = []
+                        for c in res.get('citations', []):
+                            if c.get('url'):
+                                citations_to_insert.append({
+                                    "workspace_id": workspace_id,
+                                    "run_id": run_id,
+                                    "url": c.get('url'),
+                                    "domain": c.get('domain', 'unknown')
+                                })
+                        if citations_to_insert:
+                            db.table("aeo_citations").insert(citations_to_insert).execute()
+                            
                 markdown_output += f"🔍 **For \"{query}\"**\n"
                 
                 target_wins = []
