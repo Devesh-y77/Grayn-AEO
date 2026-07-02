@@ -125,12 +125,28 @@ async def handle_call_tool(
             ws_data = db.table("workspaces").select("brand_name").eq("id", workspace_id).execute()
             brand = ws_data.data[0]["brand_name"] if ws_data.data else "Your Brand"
 
+            # Find the most recently analyzed target brand
+            recent_run_res = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute()
+            if not recent_run_res.data:
+                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+                
+            recent_run_id = recent_run_res.data[0]["id"]
+            target_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
+            active_brand = target_mention_res.data[0]["brand_name"] if target_mention_res.data else None
+
             runs = db.table("aeo_runs").select("id, engine").eq("workspace_id", workspace_id).execute().data
             if not runs:
                 return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
                 
             run_ids = [r["id"] for r in runs]
-            mentions = db.table("aeo_mentions").select("brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            
+            # Filter runs to ONLY the active target brand so we don't mix history
+            if active_brand:
+                active_run_ids = {m["run_id"] for m in mentions if m.get("is_target_brand") and m.get("brand_name") == active_brand}
+                runs = [r for r in runs if r["id"] in active_run_ids]
+                run_ids = [r["id"] for r in runs]
+                mentions = [m for m in mentions if m["run_id"] in active_run_ids]
             
             engines_seen = set([r["engine"] for r in runs])
             total_engines = len(engines_seen) or 1
@@ -155,6 +171,15 @@ async def handle_call_tool(
         elif name == "get_rival_analysis":
             competitor_name = arguments.get("competitor_name")
             
+            # Find the most recently analyzed target brand
+            recent_run_res = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute()
+            if not recent_run_res.data:
+                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+                
+            recent_run_id = recent_run_res.data[0]["id"]
+            target_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
+            active_brand = target_mention_res.data[0]["brand_name"] if target_mention_res.data else None
+            
             runs = db.table("aeo_runs").select("id, prompt_id, engine").eq("workspace_id", workspace_id).execute().data
             if not runs:
                 return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
@@ -165,6 +190,13 @@ async def handle_call_tool(
             
             mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
             
+            # Filter runs and mentions to ONLY the active target brand so we don't mix Apple/Flipkart history
+            if active_brand:
+                active_run_ids = {m["run_id"] for m in mentions if m.get("is_target_brand") and m.get("brand_name") == active_brand}
+                runs = [r for r in runs if r["id"] in active_run_ids]
+                run_ids = [r["id"] for r in runs]
+                mentions = [m for m in mentions if m["run_id"] in active_run_ids]
+                
             if not competitor_name:
                 comp_topic_wins = {}
                 for m in mentions:
