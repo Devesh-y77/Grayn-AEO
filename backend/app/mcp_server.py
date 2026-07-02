@@ -144,8 +144,10 @@ async def handle_call_tool(
                 ws_run_ids = [r["id"] for r in runs]
                 mentions = db.table("aeo_mentions").select("run_id").in_("run_id", ws_run_ids).eq("is_target_brand", True).eq("brand_name", target_brand_arg).execute().data
                 active_run_ids = {m["run_id"] for m in mentions}
-            else:
+            
+            if not active_run_ids:
                 # Default to the most recent scan session (within 5 minutes of the latest run)
+                # This also acts as a fallback if the target_brand had 0% visibility and wasn't found in mentions.
                 # Handle varying ISO formats from Supabase
                 latest_time_str = runs[0]["created_at"].replace('Z', '+00:00')
                 latest_time = datetime.fromisoformat(latest_time_str)
@@ -156,7 +158,7 @@ async def handle_call_tool(
                         active_run_ids.add(r["id"])
             
             if not active_run_ids:
-                return [types.TextContent(type="text", text=f"*No tracking data found for target: {target_brand_arg}.*")]
+                return [types.TextContent(type="text", text=f"*No tracking data found.*")]
                 
             runs = [r for r in runs if r["id"] in active_run_ids]
             run_ids = [r["id"] for r in runs]
@@ -197,7 +199,10 @@ async def handle_call_tool(
                 ws_run_ids = [r["id"] for r in runs]
                 target_mentions = db.table("aeo_mentions").select("run_id").in_("run_id", ws_run_ids).eq("is_target_brand", True).eq("brand_name", target_brand_arg).execute().data
                 active_run_ids = {m["run_id"] for m in target_mentions}
-            else:
+                
+            if not active_run_ids:
+                # Default to the most recent scan session (within 5 minutes of the latest run)
+                # This also acts as a fallback if the target_brand had 0% visibility and wasn't found in mentions.
                 latest_time_str = runs[0]["created_at"].replace('Z', '+00:00')
                 latest_time = datetime.fromisoformat(latest_time_str)
                 for r in runs:
@@ -207,7 +212,7 @@ async def handle_call_tool(
                         active_run_ids.add(r["id"])
                         
             if not active_run_ids:
-                return [types.TextContent(type="text", text=f"*No tracking data found for target: {target_brand_arg}.*")]
+                return [types.TextContent(type="text", text=f"*No tracking data found.*")]
                 
             runs = [r for r in runs if r["id"] in active_run_ids]
             run_ids = [r["id"] for r in runs]
