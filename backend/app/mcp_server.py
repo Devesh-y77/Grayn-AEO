@@ -422,8 +422,11 @@ async def handle_call_tool(
             prompt_data = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute()
             if prompt_data.data:
                 prompt_id = prompt_data.data[0]["id"]
-                citations = db.table("aeo_citations").select("url").eq("prompt_id", prompt_id).limit(10).execute()
-                urls = list(set([c["url"] for c in citations.data if c["url"]]))
+                runs = db.table("aeo_runs").select("id").eq("prompt_id", prompt_id).execute()
+                if runs.data:
+                    run_ids = [r["id"] for r in runs.data]
+                    citations = db.table("aeo_citations").select("url").in_("run_id", run_ids).limit(10).execute()
+                    urls = list(set([c["url"] for c in citations.data if c["url"]]))
             
             # Fallback to live cache if not in DB
             if not urls and topic == LAST_SEARCHED_TOPICS.get(str(workspace_id)):
