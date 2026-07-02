@@ -48,7 +48,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "competitor_name": {
                         "type": "string",
-                        "description": "Optional. The name of the specific competitor to analyze. Leave blank to auto-detect."
+                        "description": "Optional. The name of the specific competitor to analyze. NEVER put the user's own brand name here. Leave blank for a general overview."
                     },
                     "target_brand": {
                         "type": "string",
@@ -123,7 +123,7 @@ async def handle_call_tool(
     
     db = get_supabase()
     # Assume single workspace for MCP context
-    workspace_data = db.table("workspaces").select("id").limit(1).execute()
+    workspace_data = db.table("workspaces").select("id, brand_name, domain").limit(1).execute()
     if not workspace_data.data:
         return [types.TextContent(type="text", text="Error: No workspace found.")]
     
@@ -220,6 +220,15 @@ async def handle_call_tool(
             prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
             
             mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            
+            # Prevent AI from mistakenly passing the user's own brand as a competitor
+            if competitor_name:
+                ws_brand = (workspace_data.data[0].get("brand_name") or "").lower()
+                ws_domain = (workspace_data.data[0].get("domain") or "").lower()
+                c_lower = competitor_name.lower()
+                if c_lower:
+                    if (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
+                        competitor_name = None
                 
             if not competitor_name:
                 comp_topic_wins = {}
