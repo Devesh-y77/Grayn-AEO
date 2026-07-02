@@ -166,15 +166,33 @@ async def handle_call_tool(
             mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
             
             if not competitor_name:
-                comp_counts = {}
+                comp_topic_wins = {}
                 for m in mentions:
                     if not m.get("is_target_brand"):
                         c_name = m.get("brand_name", "Unknown")
-                        comp_counts[c_name] = comp_counts.get(c_name, 0) + 1
-                if not comp_counts:
+                        run = next((r for r in runs if r["id"] == m["run_id"]), None)
+                        if run:
+                            topic = prompt_map.get(run["prompt_id"], "Unknown Topic")
+                            if c_name not in comp_topic_wins:
+                                comp_topic_wins[c_name] = set()
+                            comp_topic_wins[c_name].add(topic)
+                            
+                if not comp_topic_wins:
                     return [types.TextContent(type="text", text="*No competitors found in the data.*")]
-                competitor_name = sorted(comp_counts.items(), key=lambda x: x[1], reverse=True)[0][0]
+                    
+                md = "**Competitor AEO Landscape (Overview)**\n\n"
+                md += "| Competitor | Topics Won | Top Topic |\n"
+                md += "|---|---|---|\n"
                 
+                sorted_comps = sorted(comp_topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
+                for comp, topics in sorted_comps[:10]:
+                    top_topic = list(topics)[0] if topics else "N/A"
+                    md += f"| {comp} | {len(topics)} | {top_topic} |\n"
+                    
+                md += f"\n*Tip: Ask about a specific brand (e.g. 'What is {sorted_comps[0][0]} getting cited for?') to see their full breakdown.*\n"
+                return [types.TextContent(type="text", text=md)]
+                
+            # Specific competitor analysis
             topic_wins = {}
             for m in mentions:
                 if m.get("brand_name", "").lower() == competitor_name.lower():
