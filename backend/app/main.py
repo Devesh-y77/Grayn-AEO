@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from app.config import get_settings
-from app.routers import v1, internal
+from app.routers import v1, internal, public_lp
 from app.mcp_server import router as mcp_router
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -105,6 +105,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 app.include_router(v1.router)
 app.include_router(internal.router)
+app.include_router(public_lp.router)
 app.include_router(mcp_router)
 
 
