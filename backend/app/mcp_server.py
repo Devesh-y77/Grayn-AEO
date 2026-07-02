@@ -128,7 +128,8 @@ async def handle_call_tool(
         return [types.TextContent(type="text", text="Error: No workspace found.")]
     
     workspace_id = workspace_data.data[0]["id"]
-    
+    try:
+        if name == "get_visibility_report":
             runs = db.table("aeo_runs").select("id, engine, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
             if not runs:
                 return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
