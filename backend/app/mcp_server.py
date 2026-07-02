@@ -33,9 +33,9 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "target_brand": {
+                    "client_name": {
                         "type": "string",
-                        "description": "Optional. The specific brand to analyze. If omitted and multiple brands exist, you will be prompted to ask the user."
+                        "description": "Optional. The name of the client or brand the user belongs to. Extract this from the chat context (e.g. channel name, user profile) if available, so you fetch data for the correct workspace."
                     }
                 }
             }
@@ -50,9 +50,9 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "string",
                         "description": "Optional. The name of the specific competitor to analyze. NEVER put the user's own brand name here. Leave blank for a general overview."
                     },
-                    "target_brand": {
+                    "client_name": {
                         "type": "string",
-                        "description": "Optional. The specific brand to analyze. If omitted and multiple brands exist, you will be prompted to ask the user."
+                        "description": "Optional. The name of the client or brand the user belongs to. Extract this from the chat context (e.g. channel name, user profile) if available, so you fetch data for the correct workspace."
                     }
                 }
             }
@@ -122,12 +122,51 @@ async def handle_call_tool(
     from app.database import get_supabase
     
     db = get_supabase()
-    # Assume single workspace for MCP context
-    workspace_data = db.table("workspaces").select("id, brand_name, domain").limit(1).execute()
-    if not workspace_data.data:
+    client_name = arguments.get("client_name") if arguments else None
+    url = arguments.get("url") if arguments else None
+    workspace_data = None
+    
+    if client_name:
+        c_lower = client_name.lower()
+        ws_res = db.table("workspaces").select("id, brand_name, domain").execute()
+        if ws_res.data:
+            for ws in ws_res.data:
+                ws_brand = ws.get("brand_name") or ""
+                ws_domain = ws.get("domain") or ""
+                if (ws_brand and c_lower in ws_brand.lower()) or (ws_domain and c_lower in ws_domain.lower()) or (ws_brand and ws_brand.lower() in c_lower) or (ws_domain and ws_domain.lower() in c_lower):
+                    workspace_data = ws
+                    break
+                    
+    if not workspace_data and url:
+        from urllib.parse import urlparse
+        parsed_uri = urlparse(url if "://" in url else "https://" + url)
+        domain = parsed_uri.netloc.replace("www.", "").lower()
+        
+        ws_res = db.table("workspaces").select("id, brand_name, domain").ilike("domain", f"%{domain}%").execute()
+        if ws_res.data:
+            workspace_data = ws_res.data[0]
+        else:
+            # Auto-provision a new workspace for this domain
+            brand_name = domain.split(".")[0].title()
+            new_ws = db.table("workspaces").insert({
+                "brand_name": brand_name,
+                "domain": domain
+            }).execute()
+            if new_ws.data:
+                workspace_data = new_ws.data[0]
+                
+    if not workspace_data and client_name:
+        return [types.TextContent(type="text", text=f"Error: Could not find any tracking data or workspace for '{client_name}'. Please run a live AEO analysis for their URL first to initialize this brand.")]
+                    
+    if not workspace_data:
+        res = db.table("workspaces").select("id, brand_name, domain").limit(1).execute()
+        if res.data:
+            workspace_data = res.data[0]
+            
+    if not workspace_data:
         return [types.TextContent(type="text", text="Error: No workspace found.")]
     
-    workspace_id = workspace_data.data[0]["id"]
+    workspace_id = workspace_data["id"]
     try:
         if name == "get_visibility_report":
             runs = db.table("aeo_runs").select("id, engine, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
@@ -223,8 +262,8 @@ async def handle_call_tool(
             
             # Prevent AI from mistakenly passing the user's own brand as a competitor
             if competitor_name:
-                ws_brand = (workspace_data.data[0].get("brand_name") or "").lower()
-                ws_domain = (workspace_data.data[0].get("domain") or "").lower()
+                ws_brand = (workspace_data.get("brand_name") or "").lower()
+                ws_domain = (workspace_data.get("domain") or "").lower()
                 c_lower = competitor_name.lower()
                 if c_lower:
                     if (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
