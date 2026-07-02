@@ -32,7 +32,12 @@ async def handle_list_tools() -> list[types.Tool]:
             description="Get the aggregate AI visibility report and pulse score.",
             inputSchema={
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "target_brand": {
+                        "type": "string",
+                        "description": "Optional. The specific brand to analyze. If omitted and multiple brands exist, you will be prompted to ask the user."
+                    }
+                }
             }
         ),
         types.Tool(
@@ -44,6 +49,10 @@ async def handle_list_tools() -> list[types.Tool]:
                     "competitor_name": {
                         "type": "string",
                         "description": "Optional. The name of the specific competitor to analyze. Leave blank to auto-detect."
+                    },
+                    "target_brand": {
+                        "type": "string",
+                        "description": "Optional. The specific brand to analyze. If omitted and multiple brands exist, you will be prompted to ask the user."
                     }
                 }
             }
@@ -122,17 +131,28 @@ async def handle_call_tool(
     
     try:
         if name == "get_visibility_report":
-            ws_data = db.table("workspaces").select("brand_name").eq("id", workspace_id).execute()
-            brand = ws_data.data[0]["brand_name"] if ws_data.data else "Your Brand"
-
+            target_brand_arg = arguments.get("target_brand")
+            
+            # Fetch all unique target brands for this workspace
+            workspace_runs = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).execute().data
+            if not workspace_runs:
+                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+            
+            ws_run_ids = [r["id"] for r in workspace_runs]
+            target_mentions = db.table("aeo_mentions").select("brand_name").in_("run_id", ws_run_ids).eq("is_target_brand", True).execute().data
+            
+            unique_brands = list(set([m["brand_name"] for m in target_mentions if m.get("brand_name")]))
+            
             # Find the most recently analyzed target brand
             recent_run_res = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute()
-            if not recent_run_res.data:
-                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
-                
             recent_run_id = recent_run_res.data[0]["id"]
-            target_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
-            active_brand = target_mention_res.data[0]["brand_name"] if target_mention_res.data else None
+            recent_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
+            latest_brand = recent_mention_res.data[0]["brand_name"] if recent_mention_res.data else None
+            
+            if not target_brand_arg and len(unique_brands) > 1:
+                return [types.TextContent(type="text", text=f"Multiple brands found in tracking data: {', '.join(unique_brands)}. Please ask the user which brand they want to analyze, or ask if they just want the latest one ({latest_brand}). You MUST call this tool again with the target_brand argument populated.")]
+                
+            active_brand = target_brand_arg or latest_brand or (unique_brands[0] if unique_brands else "Your Brand")
 
             runs = db.table("aeo_runs").select("id, engine").eq("workspace_id", workspace_id).execute().data
             if not runs:
@@ -170,15 +190,26 @@ async def handle_call_tool(
             
         elif name == "get_rival_analysis":
             competitor_name = arguments.get("competitor_name")
+            target_brand_arg = arguments.get("target_brand")
+            
+            workspace_runs = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).execute().data
+            if not workspace_runs:
+                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+            
+            ws_run_ids = [r["id"] for r in workspace_runs]
+            target_mentions = db.table("aeo_mentions").select("brand_name").in_("run_id", ws_run_ids).eq("is_target_brand", True).execute().data
+            unique_brands = list(set([m["brand_name"] for m in target_mentions if m.get("brand_name")]))
             
             # Find the most recently analyzed target brand
             recent_run_res = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute()
-            if not recent_run_res.data:
-                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
-                
             recent_run_id = recent_run_res.data[0]["id"]
-            target_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
-            active_brand = target_mention_res.data[0]["brand_name"] if target_mention_res.data else None
+            recent_mention_res = db.table("aeo_mentions").select("brand_name").eq("run_id", recent_run_id).eq("is_target_brand", True).execute()
+            latest_brand = recent_mention_res.data[0]["brand_name"] if recent_mention_res.data else None
+            
+            if not target_brand_arg and len(unique_brands) > 1:
+                return [types.TextContent(type="text", text=f"Multiple brands found in tracking data: {', '.join(unique_brands)}. Please ask the user which brand they want to analyze, or ask if they just want the latest one ({latest_brand}). You MUST call this tool again with the target_brand argument populated.")]
+                
+            active_brand = target_brand_arg or latest_brand or (unique_brands[0] if unique_brands else "Your Brand")
             
             runs = db.table("aeo_runs").select("id, prompt_id, engine").eq("workspace_id", workspace_id).execute().data
             if not runs:
