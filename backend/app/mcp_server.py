@@ -124,9 +124,17 @@ async def handle_call_tool(
     db = get_supabase()
     client_name = arguments.get("client_name") if arguments else None
     url = arguments.get("url") if arguments else None
+    injected_workspace_id = arguments.get("workspace_id") if arguments else None
     workspace_data = None
     
-    if client_name:
+    # 1. System-injected workspace ID (most secure/accurate)
+    if injected_workspace_id:
+        ws_res = db.table("workspaces").select("id, brand_name, domain").eq("id", injected_workspace_id).execute()
+        if ws_res.data:
+            workspace_data = ws_res.data[0]
+            
+    # 2. Fuzzy match by client_name
+    if not workspace_data and client_name:
         c_lower = client_name.lower()
         ws_res = db.table("workspaces").select("id, brand_name, domain").execute()
         if ws_res.data:
