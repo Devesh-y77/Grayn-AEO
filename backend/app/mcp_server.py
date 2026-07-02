@@ -436,7 +436,14 @@ async def handle_call_tool(
                 return [types.TextContent(type="text", text=f"No competitor URLs have been cited for this topic yet.")]
             
             ws_data = db.table("workspaces").select("brand_name").eq("id", workspace_id).execute()
-            brand = ws_data.data[0]["brand_name"] if ws_data.data else "Your Brand"
+            brand = ws_data.data[0]["brand_name"] if ws_data.data and ws_data.data[0].get("brand_name") else None
+            
+            if not brand:
+                target_mention = db.table("aeo_mentions").select("brand_name").eq("workspace_id", workspace_id).eq("is_target_brand", True).limit(1).execute()
+                if target_mention.data:
+                    brand = target_mention.data[0]["brand_name"]
+                else:
+                    brand = "Your Brand"
             
             from app.services.content_analyzer import analyze_content_gaps
             strategy = await analyze_content_gaps(urls, topic, brand)
