@@ -349,7 +349,7 @@ async def handle_call_tool(
                 
                 target_wins = []
                 target_losses = []
-                competitors = {}
+                brand_tally = {}
                 
                 for res in engine_results:
                     engine_name = res.get('engine', 'Unknown').title()
@@ -368,9 +368,8 @@ async def handle_call_tool(
                         target_losses.append(engine_name)
                         
                     for m in mentions:
-                        if not m.get('is_target_brand'):
-                            c_name = m.get('brand_name', 'Unknown')
-                            competitors[c_name] = competitors.get(c_name, 0) + 1
+                        c_name = m.get('brand_name', 'Unknown')
+                        brand_tally[c_name] = brand_tally.get(c_name, 0) + 1
                             
                 total_engines = len(engine_results)
                 win_count = len(target_wins)
@@ -381,10 +380,11 @@ async def handle_call_tool(
                 if target_losses:
                     markdown_output += f"❌ {', '.join(target_losses)} — not cited.\n"
                     
-                if competitors:
-                    sorted_comps = sorted(competitors.items(), key=lambda x: x[1], reverse=True)
-                    top_comps = [c[0] for c in sorted_comps[:3]]
-                    markdown_output += f"🏆 **Winning it:** {', '.join(top_comps)}\n"
+                if brand_tally:
+                    # Sort by number of engine mentions, then by name to ensure stable sorting
+                    sorted_brands = sorted(brand_tally.items(), key=lambda x: (-x[1], x[0]))
+                    top_brands = [c[0] for c in sorted_brands[:3]]
+                    markdown_output += f"🏆 **Winning it:** {', '.join(top_brands)}\n"
                     
                 markdown_output += "\n---\n\n"
 
