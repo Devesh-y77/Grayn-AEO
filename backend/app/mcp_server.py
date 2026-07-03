@@ -124,7 +124,8 @@ async def handle_call_tool(
     db = get_supabase()
     client_name = arguments.get("client_name") if arguments else None
     url = arguments.get("url") if arguments else None
-    injected_workspace_id = arguments.get("workspace_id") if arguments else None
+    # Lovable dispatcher will inject workspace_ref from prod DB
+    injected_workspace_id = arguments.get("workspace_ref") or arguments.get("workspace_id") if arguments else None
     workspace_data = None
     
     # 1. System-injected workspace ID (most secure/accurate)
@@ -155,11 +156,16 @@ async def handle_call_tool(
             workspace_data = ws_res.data[0]
         else:
             # Auto-provision a new workspace for this domain
-            brand_name = domain.split(".")[0].title()
-            new_ws = db.table("workspaces").insert({
+            brand_name = client_name or domain.split(".")[0].title()
+            payload = {
                 "brand_name": brand_name,
                 "domain": domain
-            }).execute()
+            }
+            # Keep IDs perfectly synced across prod and staging databases!
+            if injected_workspace_id:
+                payload["id"] = injected_workspace_id
+                
+            new_ws = db.table("workspaces").insert(payload).execute()
             if new_ws.data:
                 workspace_data = new_ws.data[0]
                 
