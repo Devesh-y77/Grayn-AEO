@@ -164,7 +164,7 @@ async def handle_call_tool(
                 workspace_data = new_ws.data[0]
                 
     if not workspace_data and client_name:
-        return [types.TextContent(type="text", text=f"Error: Could not find any tracking data or workspace for '{client_name}'. Please run a live AEO analysis for their URL first to initialize this brand.")]
+        return [types.TextContent(type="text", text=f"I couldn't find any existing tracking data for '{client_name}'. To get started, I can run a fresh live AEO scan. What is the website URL for {client_name}?")]
                     
     if not workspace_data:
         res = db.table("workspaces").select("id, brand_name, domain").limit(1).execute()
@@ -172,14 +172,14 @@ async def handle_call_tool(
             workspace_data = res.data[0]
             
     if not workspace_data:
-        return [types.TextContent(type="text", text="Error: No workspace found.")]
+        return [types.TextContent(type="text", text="I don't have any tracking data for this brand yet. Would you like me to run a fresh live analysis? If so, please provide the website URL you'd like me to scan.")]
     
     workspace_id = workspace_data["id"]
     try:
         if name == "get_visibility_report":
             runs = db.table("aeo_runs").select("id, engine, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
             if not runs:
-                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+                return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand. Would you like me to run a live visibility scan right now to fetch the latest data?")]
             
             target_brand_arg = arguments.get("target_brand")
             
@@ -205,7 +205,7 @@ async def handle_call_tool(
                         active_run_ids.add(r["id"])
             
             if not active_run_ids:
-                return [types.TextContent(type="text", text=f"*No tracking data found.*")]
+                return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand. Would you like me to run a live visibility scan right now to fetch the latest data?")]
                 
             runs = [r for r in runs if r["id"] in active_run_ids]
             run_ids = [r["id"] for r in runs]
@@ -237,7 +237,7 @@ async def handle_call_tool(
             
             runs = db.table("aeo_runs").select("id, prompt_id, engine, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
             if not runs:
-                return [types.TextContent(type="text", text="*No tracking data found. Run a live scan first.*")]
+                return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand, so I can't analyze competitors yet. Would you like me to run a live visibility scan right now?")]
                 
             from datetime import datetime
             
@@ -348,7 +348,7 @@ async def handle_call_tool(
             if not url:
                 url = LAST_SEARCHED_URLS.get(str(workspace_id))
                 if not url:
-                    return [types.TextContent(type="text", text="Error: Missing 'url'. Please specify a URL to analyze since there is no previous search history.")]
+                    return [types.TextContent(type="text", text="I need a website URL to run a live AEO analysis, but I couldn't find one in our history. Could you please provide the URL you'd like me to scan?")]
             
             # Save to memory for future queries
             LAST_SEARCHED_URLS[str(workspace_id)] = url
@@ -533,7 +533,7 @@ async def handle_call_tool(
                         topic = recent.data[0]["aeo_prompts"].get("prompt_text")
                         
                 if not topic:
-                    return [types.TextContent(type="text", text="Error: Missing 'topic'. Please specify a topic or run a live analysis first.")]
+                    return [types.TextContent(type="text", text="I couldn't determine which topic you want to analyze for content gaps. Could you tell me what specific topic or query you'd like to rank higher for? Alternatively, I can run a fresh live scan first.")]
                     
             urls = []
             # First try DB
