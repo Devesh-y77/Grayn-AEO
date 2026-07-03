@@ -428,6 +428,9 @@ async def handle_call_tool(
             from datetime import datetime
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]}"
             
+            markdown_output += "| Query | Your Visibility | Top Competitors |\n"
+            markdown_output += "|---|---|---|\n"
+            
             for query, engine_results in grouped_results.items():
                 # 1. Insert or get prompt
                 p_resp = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).eq("prompt_text", query).execute()
@@ -481,8 +484,6 @@ async def handle_call_tool(
                         if citations_to_insert:
                             db.table("aeo_citations").insert(citations_to_insert).execute()
                             
-                markdown_output += f"🔍 **For \"{query}\"**\n"
-                
                 target_wins = []
                 target_losses = []
                 brand_tally = {}
@@ -499,9 +500,9 @@ async def handle_call_tool(
                     
                     if target_mention:
                         pos = target_mention.get('position', '-')
-                        target_wins.append(f"✅ {engine_name} (cited #{pos})")
+                        target_wins.append(f"✅ {engine_name} (#{pos})")
                     else:
-                        target_losses.append(engine_name)
+                        target_losses.append(f"❌ {engine_name}")
                         
                     for m in mentions:
                         c_name = m.get('brand_name', 'Unknown')
@@ -509,20 +510,21 @@ async def handle_call_tool(
                             
                 total_engines = len(engine_results)
                 win_count = len(target_wins)
-                markdown_output += f"You're in {win_count} of {total_engines} engines.\n"
                 
+                vis_str = f"{win_count}/{total_engines} — "
                 if target_wins:
-                    markdown_output += " · ".join(target_wins) + "\n"
+                    vis_str += " ".join(target_wins) + " "
                 if target_losses:
-                    markdown_output += f"❌ {', '.join(target_losses)} — not cited.\n"
+                    vis_str += " ".join(target_losses)
                     
+                top_brands_str = "-"
                 if brand_tally:
                     # Sort by number of engine mentions, then by name to ensure stable sorting
                     sorted_brands = sorted(brand_tally.items(), key=lambda x: (-x[1], x[0]))
                     top_brands = [c[0] for c in sorted_brands[:3]]
-                    markdown_output += f"🏆 **Winning it:** {', '.join(top_brands)}\n"
+                    top_brands_str = ", ".join(top_brands)
                     
-                markdown_output += "\n---\n\n"
+                markdown_output += f"| {query} | {vis_str.strip()} | {top_brands_str} |\n"
 
             return [types.TextContent(type="text", text=markdown_output.strip())]
             
