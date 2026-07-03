@@ -527,6 +527,12 @@ async def handle_call_tool(
             if not topic:
                 topic = LAST_SEARCHED_TOPICS.get(str(workspace_id))
                 if not topic:
+                    # Robust fallback to database if memory was cleared by server restart
+                    recent = db.table("aeo_runs").select("created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute()
+                    if recent.data and recent.data[0].get("aeo_prompts"):
+                        topic = recent.data[0]["aeo_prompts"].get("prompt_text")
+                        
+                if not topic:
                     return [types.TextContent(type="text", text="Error: Missing 'topic'. Please specify a topic or run a live analysis first.")]
                     
             urls = []
