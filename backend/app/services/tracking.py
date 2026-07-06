@@ -43,7 +43,9 @@ async def run_single_prompt(
     prompt_id = prompt["id"]
 
     # ── Idempotency check (TR-07) ────────────────────────
-    existing = (
+    import asyncio
+    
+    query = (
         db.table("aeo_runs")
         .select("id")
         .eq("workspace_id", workspace_id)
@@ -51,8 +53,8 @@ async def run_single_prompt(
         .eq("engine", engine.value)
         .eq("iso_week", week)
         .maybe_single()
-        .execute()
     )
+    existing = await asyncio.to_thread(query.execute)
     if existing is not None and existing.data:
         logger.info(
             "Run already exists for prompt=%s engine=%s week=%s — skipping",
@@ -74,7 +76,7 @@ async def run_single_prompt(
             "Engine %s failed for prompt %s: %s", engine.value, prompt_id, exc
         )
         # Persist a failed run (TR-10)
-        failed_run = (
+        failed_run_query = (
             db.table("aeo_runs")
             .insert({
                 "workspace_id": workspace_id,
@@ -85,8 +87,8 @@ async def run_single_prompt(
                 "status": "error",
                 "cost_usd": 0,
             })
-            .execute()
         )
+        failed_run = await asyncio.to_thread(failed_run_query.execute)
         return failed_run.data[0] if failed_run.data else None
 
     # ── Run the judge ────────────────────────────────────
@@ -100,7 +102,7 @@ async def run_single_prompt(
         )
     except Exception as exc:
         logger.error("Judge failed for prompt %s: %s", prompt_id, exc)
-        failed_run = (
+        failed_run_query = (
             db.table("aeo_runs")
             .insert({
                 "workspace_id": workspace_id,
@@ -111,8 +113,8 @@ async def run_single_prompt(
                 "status": "error",
                 "cost_usd": result.cost_usd,
             })
-            .execute()
         )
+        failed_run = await asyncio.to_thread(failed_run_query.execute)
         return failed_run.data[0] if failed_run.data else None
 
     # ── Persist run ──────────────────────────────────────
@@ -128,7 +130,8 @@ async def run_single_prompt(
         "cost_usd": result.cost_usd,
         "status": "complete",
     }
-    run_row = db.table("aeo_runs").insert(run_data).execute()
+    run_query = db.table("aeo_runs").insert(run_data)
+    run_row = await asyncio.to_thread(run_query.execute)
     run_id = run_row.data[0]["id"]
 
     # ── Persist mentions & citations ─────────────────────
@@ -137,12 +140,13 @@ async def run_single_prompt(
         target_lower = workspace.get("brand_name", "").lower()
         aliases = [a.lower() for a in (workspace.get("aliases") or [])]
         
+        mentions_to_insert = []
         for m in extraction.mentions:
             m_lower = m.brand_name.lower()
             is_target = m.is_target_brand or target_lower in m_lower or any(a in m_lower for a in aliases)
             
             attrs_dump = [a.model_dump() for a in m.attributes]
-            db.table("aeo_mentions").insert({
+            mentions_to_insert.append({
                 "workspace_id": workspace_id,
                 "run_id": run_id,
                 "brand_name": m.brand_name,
@@ -150,16 +154,25 @@ async def run_single_prompt(
                 "position": m.position,
                 "sentiment": m.sentiment.value,
                 "attributes": attrs_dump,
-            }).execute()
+            })
+        
+        if mentions_to_insert:
+            m_query = db.table("aeo_mentions").insert(mentions_to_insert)
+            await asyncio.to_thread(m_query.execute)
 
+        citations_to_insert = []
         for c in extraction.citations:
-            db.table("aeo_citations").insert({
+            citations_to_insert.append({
                 "workspace_id": workspace_id,
                 "run_id": run_id,
                 "url": c.url,
                 "domain": c.domain,
                 "source_type": c.source_type,
-            }).execute()
+            })
+            
+        if citations_to_insert:
+            c_query = db.table("aeo_citations").insert(citations_to_insert)
+            await asyncio.to_thread(c_query.execute)
 
     logger.info(
         "Completed run: prompt=%s engine=%s cost=$%.4f mentions=%d citations=%d",
@@ -197,7 +210,10 @@ async def trigger_batch_run(
     if prompt_ids:
         query = query.in_("id", prompt_ids)
 
-    prompts = query.execute().data or []
+    import asyncio
+    prompts_query = query
+    prompts_resp = await asyncio.to_thread(prompts_query.execute)
+    prompts = prompts_resp.data or []
 
     engines = engines_filter if engines_filter else list(EngineType)
 

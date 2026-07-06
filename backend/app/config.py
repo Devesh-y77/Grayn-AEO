@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     # ── Admin ─────────────────────────────────────────────
     ADMIN_TOKEN: str = "change-me-in-production"
+    
+    # ── MCP ───────────────────────────────────────────────
+    MCP_API_KEY: str = ""
 
     # ── AI Providers ──────────────────────────────────────
     OPENAI_API_KEY: str = ""

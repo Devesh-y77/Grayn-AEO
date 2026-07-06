@@ -4,7 +4,7 @@ Grayn AEO — MCP Server
 Exposes AEO visibility data to Claude Desktop and Cursor via Model Context Protocol.
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from sse_starlette.sse import EventSourceResponse
 from typing import Any
 import json
@@ -430,29 +430,32 @@ async def handle_call_tool(
             
             for query, engine_results in grouped_results.items():
                 # 1. Insert or get prompt
-                p_resp = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).eq("prompt_text", query).execute()
+                p_query = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).eq("prompt_text", query)
+                p_resp = await asyncio.to_thread(p_query.execute)
                 if p_resp.data:
                     prompt_id = p_resp.data[0]["id"]
                 else:
-                    p_resp = db.table("aeo_prompts").insert({
+                    p_insert = db.table("aeo_prompts").insert({
                         "workspace_id": workspace_id,
                         "prompt_text": query,
                         "intent": "live_scan"
-                    }).execute()
+                    })
+                    p_resp = await asyncio.to_thread(p_insert.execute)
                     prompt_id = p_resp.data[0]["id"]
                 
                 # 2. Insert runs and mentions
                 for res in engine_results:
                     engine_name = res.get('engine', 'Unknown')
                     
-                    r_resp = db.table("aeo_runs").insert({
+                    r_insert = db.table("aeo_runs").insert({
                         "workspace_id": workspace_id,
                         "prompt_id": prompt_id,
                         "engine": engine_name,
                         "iso_week": iso_week,
                         "status": "error" if "error" in res else "complete",
                         "cost_usd": 0.001
-                    }).execute()
+                    })
+                    r_resp = await asyncio.to_thread(r_insert.execute)
                     
                     if r_resp.data and "error" not in res:
                         run_id = r_resp.data[0]["id"]
@@ -467,7 +470,8 @@ async def handle_call_tool(
                                 "position": m.get('position')
                             })
                         if mentions_to_insert:
-                            db.table("aeo_mentions").insert(mentions_to_insert).execute()
+                            m_insert = db.table("aeo_mentions").insert(mentions_to_insert)
+                            await asyncio.to_thread(m_insert.execute)
                             
                         citations_to_insert = []
                         for c in res.get('citations', []):
@@ -479,7 +483,8 @@ async def handle_call_tool(
                                     "domain": c.get('domain', 'unknown')
                                 })
                         if citations_to_insert:
-                            db.table("aeo_citations").insert(citations_to_insert).execute()
+                            c_insert = db.table("aeo_citations").insert(citations_to_insert)
+                            await asyncio.to_thread(c_insert.execute)
                             
                 target_wins = []
                 target_losses = []
@@ -589,6 +594,13 @@ sse = SseServerTransport("/mcp/messages")
 @router.get("/mcp")
 async def handle_sse(request: Request):
     """MCP SSE endpoint."""
+    from app.config import get_settings
+    settings = get_settings()
+    if settings.MCP_API_KEY:
+        api_key = request.headers.get("x-api-key")
+        if api_key != settings.MCP_API_KEY:
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP API Key")
+            
     async with sse.connect_sse(
         request.scope, request.receive, request._send
     ) as (read_stream, write_stream):
@@ -599,4 +611,11 @@ async def handle_sse(request: Request):
 @router.post("/mcp/messages")
 async def handle_messages(request: Request):
     """MCP POST messages endpoint."""
+    from app.config import get_settings
+    settings = get_settings()
+    if settings.MCP_API_KEY:
+        api_key = request.headers.get("x-api-key")
+        if api_key != settings.MCP_API_KEY:
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP API Key")
+            
     await sse.handle_post_message(request.scope, request.receive, request._send)
