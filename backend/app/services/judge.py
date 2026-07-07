@@ -132,8 +132,8 @@ async def extract_mentions_and_citations(
 
     if not available_keys:
         if settings.USE_MOCK_PROVIDERS:
-            logger.info("Judge running in MOCK mode (No AI keys available)")
-            return _mock_judge_extraction(answer_text, target_brand)
+            logger.info("Judge running in MOCK mode (No AI keys available). Returning empty to prevent DB pollution.")
+            return JudgeExtraction(mentions=[], citations=[])
         else:
             raise ValueError("No API keys configured and USE_MOCK_PROVIDERS is False.")
 
@@ -224,7 +224,7 @@ async def extract_mentions_and_citations(
             continue
 
     if settings.USE_MOCK_PROVIDERS:
-        logger.warning("All AI providers failed for judge extraction, using mock.", exc_info=last_exc)
-        return _mock_judge_extraction(answer_text, target_brand)
+        logger.warning("All AI providers failed for judge extraction, but returning empty extraction instead of mock data to prevent database pollution.", exc_info=last_exc)
+        return JudgeExtraction(mentions=[], citations=[])
 
     raise RuntimeError(f"Judge extraction failed across all available providers. Last error: {last_exc}")
