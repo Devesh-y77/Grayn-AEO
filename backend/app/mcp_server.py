@@ -223,17 +223,21 @@ async def handle_call_tool(
             target_mentions = [m for m in mentions if m.get("is_target_brand")]
             visibility_pct = min(100, int((len(target_mentions) / (len(runs) or 1)) * 100))
             
-            md = f"**You're at {visibility_pct}% — up 5 points**\n"
-            md += f"Cited in {len(target_mentions)} of {len(runs)} tracked prompts. ▲ +5 pts vs last week.\n\n"
+            md = f"**You're at {visibility_pct}%**\n"
+            md += f"Cited in {len(target_mentions)} of {len(runs)} tracked prompts.\n\n"
             
             engine_counts = {}
+            target_mentions_by_engine = {}
             for r in runs:
-                engine_counts[r["engine"]] = engine_counts.get(r["engine"], 0) + 1
+                engine = r["engine"]
+                engine_counts[engine] = engine_counts.get(engine, 0) + 1
+                if any(m["run_id"] == r["id"] and m.get("is_target_brand") for m in mentions):
+                    target_mentions_by_engine[engine] = target_mentions_by_engine.get(engine, 0) + 1
                 
-            for engine in engines_seen:
-                # Mock a trend arrow for UI matching PRD
-                trend = "▲" if len(engine) % 2 == 0 else "▼" if len(engine) % 3 == 0 else "▬"
-                md += f"**{engine.title()}**: {min(100, visibility_pct + (len(engine)*2))}% {trend}\n"
+            for engine, total in engine_counts.items():
+                engine_mentions = target_mentions_by_engine.get(engine, 0)
+                engine_pct = int((engine_mentions / total) * 100)
+                md += f"**{engine.title()}**: {engine_pct}%\n"
             
             return [types.TextContent(type="text", text=md)]
             
