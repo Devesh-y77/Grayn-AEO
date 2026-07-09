@@ -440,6 +440,20 @@ class SlackPayload(BaseModel):
     text: str  # Fallback plain text
 
 
+class SlackScanTriggerRequest(BaseModel):
+    workspace_id: str
+    brand_name: str
+    website_url: Optional[str] = None
+    requested_by_slack_user: Optional[str] = None
+    callback: dict
+
+
+class SlackReportTriggerRequest(BaseModel):
+    workspace_id: str
+    brand_name: str
+    callback: dict
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Alerts & Digests
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

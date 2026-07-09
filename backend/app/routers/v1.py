@@ -5,11 +5,15 @@ All endpoints require a workspace Bearer key in the Authorization header.
 Organised by domain matching the BRD's API surface (Appendix A).
 """
 
-from fastapi import APIRouter, Depends, BackgroundTasks, Query, Response
+from fastapi import APIRouter, Depends, BackgroundTasks, Query, Response, HTTPException
+import httpx
+import uuid
+import os
 from fastapi.responses import JSONResponse
 from supabase import Client
 from app.database import get_supabase
-from app.dependencies import get_current_workspace
+from app.dependencies import get_current_workspace, verify_slack_api_key
+from app.config import get_settings
 from app.models.schemas import (
     WorkspaceOut,
     PromptCreate,
@@ -40,7 +44,9 @@ from app.models.schemas import (
     DiscoverApply,
     EngineType,
     WorkstreamCreate,
-    WorkstreamOut
+    WorkstreamOut,
+    SlackScanTriggerRequest,
+    SlackReportTriggerRequest
 )
 from app.services import scoring, tracking, discovery
 import hashlib
@@ -1060,3 +1066,177 @@ async def onboard_workspace(
     
     return {"status": "onboarded", "workspace_id": ws_id, "message": "Tracking started in background"}
 
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Slack External Handlers (Lovable App Contract)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.post("/scans/trigger", status_code=202)
+async def trigger_slack_scan(
+    body: SlackScanTriggerRequest,
+    background_tasks: BackgroundTasks,
+    is_valid: bool = Depends(verify_slack_api_key),
+    db: Client = Depends(get_supabase)
+):
+    scan_id = str(uuid.uuid4())
+    
+    async def _run_scan_bg():
+        payload = {
+            "flow_key": "trigger_new_ai_scan",
+            "workspace_id": body.workspace_id,
+            "channel": body.callback.get("channel"),
+            "thread_ts": body.callback.get("thread_ts"),
+            "status": "ok",
+            "payload": {"scan_id": scan_id}
+        }
+        try:
+            ws_res = db.table("workspaces").select("*").eq("id", body.workspace_id).execute()
+            if not ws_res.data:
+                raise ValueError("Workspace not found")
+            ws = ws_res.data[0]
+            
+            prompt_res = db.table("aeo_prompts").select("id").eq("workspace_id", body.workspace_id).execute()
+            prompt_ids = [p["id"] for p in prompt_res.data]
+            
+            if prompt_ids:
+                engines = [EngineType.OPENAI, EngineType.GEMINI, EngineType.GOOGLE_AI, EngineType.PERPLEXITY]
+                await tracking.trigger_batch_run(db, ws, engines, prompt_ids)
+                
+        except Exception as e:
+            payload["status"] = "error"
+            payload["payload"] = {"error": str(e)}
+            
+        # Emit callback
+        settings = get_settings()
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{settings.SUPABASE_URL}/functions/v1/slack-flow-callback",
+                headers={"Authorization": f"Bearer {settings.GRAYN_AEO_API_KEY}"},
+                json=payload
+            )
+
+    background_tasks.add_task(_run_scan_bg)
+    return {"scan_id": scan_id, "status": "queued"}
+
+
+@router.post("/reports/full-docx", status_code=202)
+async def trigger_slack_report(
+    body: SlackReportTriggerRequest,
+    background_tasks: BackgroundTasks,
+    is_valid: bool = Depends(verify_slack_api_key),
+    db: Client = Depends(get_supabase)
+):
+    report_id = str(uuid.uuid4())
+    
+    async def _run_report_bg():
+        payload = {
+            "flow_key": "generate_full_report",
+            "workspace_id": body.workspace_id,
+            "channel": body.callback.get("channel"),
+            "thread_ts": body.callback.get("thread_ts"),
+            "status": "ok",
+            "payload": {}
+        }
+        
+        try:
+            from docx import Document
+            import tempfile
+            
+            workspace_id = body.workspace_id
+            
+            # Fetch data
+            report = await scoring.build_full_report(db, workspace_id)
+            trend = scoring.compute_historical_trend(db, workspace_id)
+            prompts = db.table("aeo_prompts").select("*").eq("workspace_id", workspace_id).execute().data or []
+            clusters = db.table("aeo_clusters").select("*").eq("workspace_id", workspace_id).execute().data or []
+            runs = db.table("aeo_runs").select("id, engine, prompt_id, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(50).execute().data or []
+            
+            mentions_data = []
+            for run in runs:
+                m = db.table("aeo_mentions").select("brand_name, sentiment, position, is_target_brand").eq("run_id", run["id"]).execute().data or []
+                mentions_data.append({"run": run, "mentions": m})
+                
+            raw_payload = {
+                "report": report.model_dump(mode='json'),
+                "trend": trend,
+                "prompts": prompts,
+                "clusters": clusters,
+                "runs_and_mentions": mentions_data
+            }
+            
+            # Create Docx
+            document = Document()
+            document.add_heading(f'AEO Detailed Report - {body.brand_name}', 0)
+            
+            # 1. Overview
+            document.add_heading('1. Overview Dashboard', level=1)
+            rep = raw_payload["report"]
+            document.add_paragraph(f"Overall Visibility Score: {rep['visibility']['visibility_pct']}%")
+            document.add_paragraph(f"Week-over-week delta: {rep['visibility'].get('week_over_week_delta', 0)}%")
+            for engine, pct in rep['visibility']['per_engine'].items():
+                document.add_paragraph(f"- {engine}: {pct}%")
+            
+            # 2. Topic Clusters
+            document.add_heading('2. Topic Clusters', level=1)
+            if clusters:
+                for c in clusters:
+                    document.add_paragraph(f"Cluster: {c.get('cluster_name')} | Search Volume: {c.get('search_volume', 'N/A')} | Opportunity Score: {c.get('opportunity_score', 'N/A')}")
+            else:
+                document.add_paragraph("No topic clusters found.")
+                
+            # 3. Content Gaps
+            document.add_heading('3. Content Gaps Studio', level=1)
+            if prompts:
+                for p in prompts[:5]:
+                    document.add_paragraph(f"- The query '{p['prompt_text']}' lacks strong informational content linking back to {body.brand_name}.")
+            else:
+                document.add_paragraph("No prompts found to analyze gaps.")
+                
+            # 4. Query Manager
+            document.add_heading('4. Query Manager', level=1)
+            for p in prompts:
+                document.add_paragraph(f"Query: {p['prompt_text']} | Intent: {p.get('intent', 'unknown')} | Active: {p.get('is_active', True)}")
+                
+            # 5. Competitor Analysis
+            document.add_heading('5. Competitor Analysis', level=1)
+            if rep.get("leaderboard"):
+                for c in rep["leaderboard"]:
+                    document.add_paragraph(f"Rank #{c['rank']}: {c['brand_name']} - Share: {c['share_pct']}% - Mentions: {c['mention_count']}")
+            else:
+                document.add_paragraph("No competitors found.")
+                
+            # Save to tmp
+            with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+                doc_path = tmp.name
+            document.save(doc_path)
+            
+            # Upload to Supabase Storage
+            storage_path = f"reports/{workspace_id}/{report_id}.docx"
+            with open(doc_path, 'rb') as f:
+                res = db.storage.from_("grayn-aeo-artifacts").upload(storage_path, f, file_options={"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"})
+            
+            os.remove(doc_path)
+            
+            payload["payload"] = {
+                "storage_bucket": "grayn-aeo-artifacts",
+                "storage_path": storage_path,
+                "filename": f"{body.brand_name}_AEO_Report.docx",
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
+            
+        except Exception as e:
+            payload["status"] = "error"
+            payload["payload"] = {"error": str(e)}
+            
+        # Emit callback
+        settings = get_settings()
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{settings.SUPABASE_URL}/functions/v1/slack-flow-callback",
+                headers={"Authorization": f"Bearer {settings.GRAYN_AEO_API_KEY}"},
+                json=payload
+            )
+
+    background_tasks.add_task(_run_report_bg)
+    return {"report_id": report_id, "status": "queued"}

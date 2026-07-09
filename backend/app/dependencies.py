@@ -92,3 +92,25 @@ async def require_admin(
             detail="Invalid admin token",
         )
     return True
+
+
+# ── Slack/Lovable Auth (Bearer key) ──────────────────────
+
+async def verify_slack_api_key(
+    authorization: str = Header(None, alias="Authorization"),
+    settings: Settings = Depends(get_settings),
+) -> bool:
+    """Validate that the request came from the trusted Lovable Slack App."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header must start with 'Bearer '",
+        )
+    
+    raw_key = authorization.removeprefix("Bearer").strip()
+    if not settings.GRAYN_AEO_API_KEY or raw_key != settings.GRAYN_AEO_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Lovable Slack API key",
+        )
+    return True
