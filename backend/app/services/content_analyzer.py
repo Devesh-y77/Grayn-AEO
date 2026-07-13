@@ -54,13 +54,9 @@ async def analyze_content_gaps(urls: list[str], prompt_text: str, brand_name: st
         "Below is the scraped text from top-ranking competitor articles that AI engines currently cite for this topic. "
         "Analyze the content carefully. What themes, headings, structures, and questions do these competitors cover? "
         "Generate a highly-detailed 'Content Brief' for our client to write a better, more comprehensive organic article. "
-        "You MUST output valid JSON ONLY, strictly matching this schema:\n"
-        "{{\n"
-        '  "Goal": "A 1-2 sentence description of the content goal",\n'
-        '  "Must_Answer_Questions": ["Question 1", "Question 2", "Question 3"],\n'
-        '  "Competitor_To_Beat": "The name or URL of the top competitor to beat"\n'
-        "}}\n"
-        "No markdown code blocks, no intro, no outro. Just raw JSON."
+        "You MUST output a beautifully formatted Markdown response. Use bold headings, bullet points, and clear sections. "
+        "Include sections for 'Goal', 'Competitor to Beat', and 'Must-Answer Questions'. "
+        "Do NOT output JSON."
     )
 
     import google.generativeai as genai
