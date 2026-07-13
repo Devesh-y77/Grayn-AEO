@@ -532,7 +532,7 @@ def compute_platform_scorecard(
         return []
 
     prompt_ids = list(set([r["prompt_id"] for r in runs if r.get("prompt_id")]))
-    prompts = db.table("aeo_prompts").select("id, prompt_text").in_("id", prompt_ids).execute().data or [] if prompt_ids else []
+    prompts = db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).in_("id", prompt_ids).execute().data or [] if prompt_ids else []
     prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
 
     mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", [r["id"] for r in runs]).execute().data or []

@@ -19,25 +19,34 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 scheduler = AsyncIOScheduler()
 
 async def scheduled_tracking():
-    """Weekly automated tracking run for all active workspaces."""
+    """Weekly automated tracking run for all active workspaces (chunked)."""
     try:
         from app.database import get_supabase
         from app.services.tracking import trigger_batch_run
         from app.models.schemas import EngineType
+        import asyncio
         
         logger.info("Starting scheduled weekly AEO tracking batch.")
         db = get_supabase()
-        workspaces = db.table("workspaces").select("*").execute().data
+        workspaces = db.table("workspaces").select("*").execute().data or []
         
-        for ws in workspaces:
-            prompts = db.table("aeo_prompts").select("id").eq("workspace_id", ws["id"]).eq("is_active", True).execute().data
-            prompt_ids = [p["id"] for p in prompts]
-            if not prompt_ids:
-                continue
-                
-            engines = [EngineType.OPENAI, EngineType.GOOGLE_AI, EngineType.PERPLEXITY]
-            for eng in engines:
-                await trigger_batch_run(db, ws, eng, prompt_ids)
+        chunk_size = 5
+        for i in range(0, len(workspaces), chunk_size):
+            chunk = workspaces[i:i+chunk_size]
+            for ws in chunk:
+                prompts = db.table("aeo_prompts").select("id").eq("workspace_id", ws["id"]).eq("is_active", True).execute().data
+                prompt_ids = [p["id"] for p in prompts] if prompts else []
+                if not prompt_ids:
+                    continue
+                    
+                engines = [EngineType.OPENAI, EngineType.GOOGLE_AI, EngineType.PERPLEXITY]
+                for eng in engines:
+                    await trigger_batch_run(db, ws, [eng], prompt_ids)
+            
+            # Sleep after each chunk to avoid rate limits and OOM
+            if i + chunk_size < len(workspaces):
+                logger.info(f"Processed chunk {i//chunk_size + 1}. Sleeping for 60 seconds...")
+                await asyncio.sleep(60)
                 
     except Exception as e:
         logger.error(f"Scheduled tracking failed: {e}")
