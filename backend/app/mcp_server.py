@@ -168,10 +168,11 @@ async def handle_call_tool(
     from app.database import get_supabase
     
     db = get_supabase()
-    client_name = arguments.get("client_name") if arguments else None
-    url = arguments.get("url") if arguments else None
+    # Frontend injects client_name, target_brand, brand, url, domain, workspace_ref
+    client_name = (arguments.get("client_name") or arguments.get("target_brand") or arguments.get("brand")) if arguments else None
+    url = (arguments.get("url") or arguments.get("domain")) if arguments else None
     # Lovable dispatcher will inject workspace_ref from prod DB
-    injected_workspace_id = arguments.get("workspace_ref") or arguments.get("workspace_id") if arguments else None
+    injected_workspace_id = (arguments.get("workspace_ref") or arguments.get("workspace_id")) if arguments else None
     workspace_data = None
     
     # 1. System-injected workspace ID (most secure/accurate)
