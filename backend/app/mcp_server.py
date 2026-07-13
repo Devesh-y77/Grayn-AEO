@@ -257,13 +257,16 @@ async def handle_call_tool(
                 if max_engine and max_growth > 0:
                     highlight = f"{max_engine.title().replace('_', ' ')} jumped +{round(max_growth)} points vs last week."
                     
-            payload = {
-                "visibility_pct": vis.visibility_pct,
-                "delta": vis.week_over_week_delta,
-                "highlight": highlight,
-                "engine_breakdown": vis.per_engine
-            }
-            return [types.TextContent(type="text", text=json.dumps(payload))]
+            md = f"**AEO Visibility Pulse**\n\n"
+            md += f"• **Overall Score:** {vis.visibility_pct}%\n"
+            if vis.week_over_week_delta is not None:
+                md += f"• **WoW Change:** {'+' if vis.week_over_week_delta > 0 else ''}{vis.week_over_week_delta}%\n"
+            md += f"• **Highlight:** {highlight}\n\n"
+            md += f"**Engine Breakdown:**\n"
+            for eng, pct in vis.per_engine.items():
+                md += f"• {eng.title().replace('_', ' ')}: {pct}%\n"
+                
+            return [types.TextContent(type="text", text=md)]
             
         elif name == "analyze_topic":
             topic_name = arguments.get("topic_name")
@@ -426,14 +429,13 @@ async def handle_call_tool(
                 
             top_topic = sorted_topics[0][0]
             
-            payload = {
-                "competitor": competitor_name,
-                "total_topics_won": len(topic_wins),
-                "topics": topic_data,
-                "biggest_steal": top_topic
-            }
-            
-            return [types.TextContent(type="text", text=json.dumps(payload))]
+            md = f"**Competitor Deep Dive: {competitor_name.title()}**\n\n"
+            md += f"**Topics Won:** {len(topic_wins)}\n"
+            md += f"**Biggest Opportunity:** {top_topic}\n\n"
+            for t in topic_data:
+                md += f"• **{t['topic']}** ({t['volume']} volume) - won on {t['engines_won']}/{t['total_engines']} engines\n"
+                
+            return [types.TextContent(type="text", text=md)]
             
         elif name == "list_workstreams":
             ws = db.table("aeo_workstreams").select("name, target_visibility, topics, attribute_filters").eq("workspace_id", workspace_id).execute().data
