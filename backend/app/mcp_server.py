@@ -257,7 +257,11 @@ async def handle_call_tool(
                 if max_engine and max_growth > 0:
                     highlight = f"{max_engine.title().replace('_', ' ')} jumped +{round(max_growth)} points vs last week."
                     
-            md = f"**AEO Visibility Pulse**\n\n"
+            brand_display = workspace_data.get("brand_name", "").title()
+            if not brand_display:
+                brand_display = "Your Brand"
+            
+            md = f"**AEO Visibility Pulse for {brand_display}**\n\n"
             md += f"• **Overall Score:** {vis.visibility_pct}%\n"
             if vis.week_over_week_delta is not None:
                 md += f"• **WoW Change:** {'+' if vis.week_over_week_delta > 0 else ''}{vis.week_over_week_delta}%\n"
