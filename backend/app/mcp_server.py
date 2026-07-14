@@ -59,7 +59,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="list_workstreams",
-            description="List all tracked AEO workstreams",
+            description="List the topics (also known as queries, search terms, or workstreams) currently being tracked for the brand. Use this when the user asks what queries or topics were run or are being tracked.",
             inputSchema={
                 "type": "object",
                 "properties": {},
