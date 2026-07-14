@@ -261,16 +261,20 @@ async def handle_call_tool(
             if not brand_display:
                 brand_display = "Your Brand"
             
-            md = f"**AEO Visibility Pulse for {brand_display}**\n\n"
-            md += f"• **Overall Score:** {vis.visibility_pct}%\n"
-            if vis.week_over_week_delta is not None:
-                md += f"• **WoW Change:** {'+' if vis.week_over_week_delta > 0 else ''}{vis.week_over_week_delta}%\n"
-            md += f"• **Highlight:** {highlight}\n\n"
-            md += f"**Engine Breakdown:**\n"
+            payload = {
+                "overall_score": vis.visibility_pct,
+                "summary": f"**{brand_display}** tracking summary. {'+' if vis.week_over_week_delta and vis.week_over_week_delta > 0 else ''}{vis.week_over_week_delta if vis.week_over_week_delta is not None else 0} pts vs last week.\nOne to mention: **{highlight}**",
+                "engines": []
+            }
             for eng, pct in vis.per_engine.items():
-                md += f"• {eng.title().replace('_', ' ')}: {pct}%\n"
+                prev_pct = prev_vis.per_engine.get(eng, 0) if prev_vis and prev_vis.per_engine else 0
+                payload["engines"].append({
+                    "name": eng.title().replace('_', ' '),
+                    "score": pct,
+                    "delta": pct - prev_pct
+                })
                 
-            return [types.TextContent(type="text", text=md)]
+            return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "analyze_topic":
             topic_name = arguments.get("topic_name")
@@ -319,8 +323,10 @@ async def handle_call_tool(
             
             payload = {
                 "topic": topic_name,
-                "engines": engines_won,
-                "top_competitors": top_competitors
+                "visibility": int(len([e for e in engines_won if e["cited"]]) / max(1, len(engines_won)) * 100),
+                "winners": top_competitors,
+                "engines_hit": [e["engine"] for e in engines_won if e["cited"]],
+                "summary": f"Analyzed on {len(engines_won)} engines."
             }
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
@@ -385,17 +391,15 @@ async def handle_call_tool(
                 if not comp_topic_wins:
                     return [types.TextContent(type="text", text="*No competitors found in the data.*")]
                     
-                md = "**Competitor AEO Landscape (Overview)**\n\n"
-                md += "| Competitor | Topics Won | Top Topic |\n"
-                md += "|---|---|---|\n"
-                
                 sorted_comps = sorted(comp_topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
-                for comp, topics in sorted_comps[:10]:
-                    top_topic = list(topics)[0] if topics else "N/A"
-                    md += f"| {comp} | {len(topics)} | {top_topic} |\n"
-                    
-                md += f"\n*Tip: Ask about a specific brand (e.g. 'What is {sorted_comps[0][0]} getting cited for?') to see their full breakdown.*\n"
-                return [types.TextContent(type="text", text=md)]
+                payload = {
+                    "summary": "Competitor AEO Landscape (Overview)",
+                    "rows": [
+                        {"name": comp, "share_of_voice": len(topics) * 10, "delta": 0.0}
+                        for comp, topics in sorted_comps[:10]
+                    ]
+                }
+                return [types.TextContent(type="text", text=json.dumps(payload))]
                 
             # Specific competitor analysis
             topic_wins = {}
@@ -433,13 +437,19 @@ async def handle_call_tool(
                 
             top_topic = sorted_topics[0][0]
             
-            md = f"**Competitor Deep Dive: {competitor_name.title()}**\n\n"
-            md += f"**Topics Won:** {len(topic_wins)}\n"
-            md += f"**Biggest Opportunity:** {top_topic}\n\n"
-            for t in topic_data:
-                md += f"• **{t['topic']}** ({t['volume']} volume) - won on {t['engines_won']}/{t['total_engines']} engines\n"
+            payload = {
+                "competitor": competitor_name.title(),
+                "summary": f"Won {len(topic_wins)} topics. Biggest opportunity: {sorted_topics[0][0]}",
+                "rows": []
+            }
+            for topic, engines in sorted_topics:
+                payload["rows"].append({
+                    "name": topic,
+                    "share_of_voice": int(len(engines) / 6 * 100),
+                    "delta": 0.0
+                })
                 
-            return [types.TextContent(type="text", text=md)]
+            return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "list_workstreams":
             ws = db.table("aeo_workstreams").select("name, target_visibility, topics, attribute_filters").eq("workspace_id", workspace_id).execute().data
