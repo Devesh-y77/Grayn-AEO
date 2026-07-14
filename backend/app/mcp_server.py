@@ -261,9 +261,10 @@ async def handle_call_tool(
             if not brand_display:
                 brand_display = "Your Brand"
             
+            actual_delta = round(vis.visibility_pct - (prev_vis.visibility_pct if prev_vis else 0))
             payload = {
                 "overall_score": vis.visibility_pct,
-                "summary": f"**{brand_display}** tracking summary. {'+' if vis.week_over_week_delta and vis.week_over_week_delta > 0 else ''}{vis.week_over_week_delta if vis.week_over_week_delta is not None else 0} pts vs last week.\nOne to mention: **{highlight}**",
+                "summary": f"**{brand_display}** tracking summary. {'+' if actual_delta > 0 else ''}{actual_delta} pts vs last week.\nOne to mention: **{highlight}**",
                 "engines": []
             }
             for eng, pct in vis.per_engine.items():
