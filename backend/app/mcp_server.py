@@ -390,6 +390,10 @@ async def handle_call_tool(
                 for m in mentions:
                     if not m.get("is_target_brand"):
                         c_name = m.get("brand_name", "Unknown")
+                        # Basic normalizer
+                        c_name = c_name.replace(".com", "").replace(".ai", "").strip().title()
+                        if c_name.lower() == "abcmouse": c_name = "ABCmouse"
+                        
                         run = next((r for r in runs if r["id"] == m["run_id"]), None)
                         if run:
                             topic = prompt_map.get(run["prompt_id"], "Unknown Topic")
@@ -401,10 +405,13 @@ async def handle_call_tool(
                     return [types.TextContent(type="text", text="*No competitors found in the data.*")]
                     
                 sorted_comps = sorted(comp_topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
+                total_topics = len(set(run["prompt_id"] for run in runs))
+                total_topics = max(total_topics, 1) # Prevent div by 0
+                
                 payload = {
                     "summary": "Competitor AEO Landscape (Overview)",
                     "rows": [
-                        {"name": comp, "share_of_voice": len(topics) * 10, "delta": 0.0}
+                        {"name": comp, "share_of_voice": int(len(topics) / total_topics * 100), "delta": 0.0}
                         for comp, topics in sorted_comps[:10]
                     ]
                 }
@@ -461,8 +468,45 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "list_workstreams":
-            ws = db.table("aeo_workstreams").select("name, target_visibility, topics, attribute_filters").eq("workspace_id", workspace_id).execute().data
-            return [types.TextContent(type="text", text=json.dumps(ws, indent=2))]
+            prompts = db.table("aeo_prompts").select("prompt_text").eq("workspace_id", workspace_id).execute().data
+            if not prompts:
+                return [types.TextContent(type="text", text="No topics are currently being tracked. Try running a live AEO scan first!")]
+            unique_topics = list(set([p["prompt_text"] for p in prompts]))
+            md = "**Currently Tracked Topics:**\n\n"
+            for t in unique_topics:
+                md += f"• {t}\n"
+            return [types.TextContent(type="text", text=md)]
+            
+        elif name == "get_raw_ai_answer":
+            topic = arguments.get("topic")
+            engine = arguments.get("engine")
+            
+            if not topic or not engine:
+                return [types.TextContent(type="text", text=json.dumps({"error": "Both topic and engine are required."}))]
+                
+            prompts = db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute().data
+            if not prompts:
+                return [types.TextContent(type="text", text=json.dumps({"error": f"No tracking data found for topic: {topic}"}))]
+                
+            prompt_id = prompts[0]["id"]
+            runs = db.table("aeo_runs").select("id, raw_response").eq("prompt_id", prompt_id).ilike("engine", f"%{engine}%").order("created_at", desc=True).limit(1).execute().data
+            
+            if not runs or not runs[0].get("raw_response"):
+                return [types.TextContent(type="text", text=json.dumps({"error": f"No raw AI answer found for {topic} on {engine}. It might be from an older scan before we started saving raw text!"}))]
+                
+            run_id = runs[0]["id"]
+            raw_text = runs[0]["raw_response"]
+            
+            citations = db.table("aeo_citations").select("url").eq("run_id", run_id).execute().data
+            citation_urls = [c["url"] for c in citations if c.get("url")] if citations else []
+            
+            payload = {
+                "topic": topic.title(),
+                "engine": engine.title(),
+                "raw_text": raw_text,
+                "citations": citation_urls
+            }
+            return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "get_recommendations":
             recs = db.table("aeo_recommendations").select("content, engine, status").eq("workspace_id", workspace_id).execute().data
@@ -528,7 +572,8 @@ async def handle_call_tool(
                         "query": query_text,
                         "engine": mapped_eng_str,
                         "mentions": [m.dict() for m in ext.mentions],
-                        "citations": [c.dict() for c in ext.citations]
+                        "citations": [c.dict() for c in ext.citations],
+                        "raw_text": res.raw_text
                     }
                 except Exception as e:
                     return {"query": query_text, "engine": engine_str, "error": str(e)}
@@ -582,6 +627,7 @@ async def handle_call_tool(
                         "engine": engine_name,
                         "iso_week": iso_week,
                         "status": "error" if "error" in res else "complete",
+                        "raw_response": res.get("raw_text"),
                         "cost_usd": 0.001
                     })
                     r_resp = await asyncio.to_thread(r_insert.execute)
