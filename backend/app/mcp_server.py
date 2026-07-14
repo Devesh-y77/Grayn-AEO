@@ -356,8 +356,7 @@ async def handle_call_tool(
             if not runs:
                 return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand, so I can't analyze competitors yet. Would you like me to run a live visibility scan right now?")]
                 
-            from datetime import datetime
-            
+                
             active_run_ids = set()
             if target_brand_arg:
                 ws_run_ids = [r["id"] for r in runs]
