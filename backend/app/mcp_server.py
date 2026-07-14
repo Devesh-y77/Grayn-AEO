@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from typing import Any
 import json
 import logging
+from datetime import datetime
 from mcp.server import Server
 import mcp.types as types
 from mcp.server.sse import SseServerTransport
@@ -477,13 +478,17 @@ async def handle_call_tool(
             
         elif name == "list_workstreams":
             # Fetch the most recent runs to get only recently tracked topics
-            runs = db.table("aeo_runs").select("prompt_id, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute().data
+            runs = db.table("aeo_runs").select("prompt_id, created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute().data
             
             if not runs:
                 return [types.TextContent(type="text", text="No topics are currently being tracked. Try running a live AEO scan first!")]
                 
+            # Filter to only include the most recent scan session (within 5 mins of latest run)
+            latest_time = datetime.fromisoformat(runs[0]["created_at"].replace('Z', '+00:00'))
+            recent_runs = [r for r in runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
+                
             unique_topics = []
-            for r in runs:
+            for r in recent_runs:
                 p_data = r.get("aeo_prompts")
                 if p_data:
                     # Handle both dictionary and list return formats from Supabase joins
@@ -537,10 +542,19 @@ async def handle_call_tool(
                 
             run_ids = list(set([m["run_id"] for m in mentions]))
             
-            # Fetch citations for those runs
-            citations = db.table("aeo_citations").select("url, domain").in_("run_id", run_ids).execute().data
+            # Fetch the runs for these mentions so we can filter by the most recent scan session
+            runs = db.table("aeo_runs").select("id, created_at").eq("workspace_id", workspace_id).in_("id", run_ids).order("created_at", desc=True).execute().data
+            if not runs:
+                return [types.TextContent(type="text", text="*No runs found for citations.*")]
+                
+            # Filter to only the most recent scan session (within 5 mins of latest run)
+            latest_time = datetime.fromisoformat(runs[0]["created_at"].replace('Z', '+00:00'))
+            recent_run_ids = [r["id"] for r in runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
+            
+            # Fetch citations for those recent runs
+            citations = db.table("aeo_citations").select("url, domain").in_("run_id", recent_run_ids).execute().data
             if not citations:
-                return [types.TextContent(type="text", text="*No citation URLs found in the AI engine responses for your brand.*")]
+                return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
                 
             from collections import Counter
             domain_counts = Counter()
