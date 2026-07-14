@@ -261,19 +261,27 @@ async def handle_call_tool(
             if not brand_display:
                 brand_display = "Your Brand"
             
-            actual_delta = round(vis.visibility_pct - (prev_vis.visibility_pct if prev_vis else 0))
+            if prev_vis and prev_vis.per_engine:
+                actual_delta = round(vis.visibility_pct - prev_vis.visibility_pct)
+                summary_text = f"**{brand_display}** tracking summary. {'+' if actual_delta > 0 else ''}{actual_delta} pts vs last week.\nOne to mention: **{highlight}**"
+            else:
+                summary_text = f"**{brand_display}** baseline established today. (No historical data to compare against yet).\nOne to mention: **{highlight}**"
+                
             payload = {
                 "overall_score": vis.visibility_pct,
-                "summary": f"**{brand_display}** tracking summary. {'+' if actual_delta > 0 else ''}{actual_delta} pts vs last week.\nOne to mention: **{highlight}**",
+                "summary": summary_text,
                 "engines": []
             }
+            
             for eng, pct in vis.per_engine.items():
-                prev_pct = prev_vis.per_engine.get(eng, 0) if prev_vis and prev_vis.per_engine else 0
-                payload["engines"].append({
+                eng_data = {
                     "name": eng.title().replace('_', ' '),
-                    "score": pct,
-                    "delta": pct - prev_pct
-                })
+                    "score": pct
+                }
+                if prev_vis and prev_vis.per_engine and eng in prev_vis.per_engine:
+                    eng_data["delta"] = pct - prev_vis.per_engine[eng]
+                    
+                payload["engines"].append(eng_data)
                 
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
