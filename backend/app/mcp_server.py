@@ -516,8 +516,8 @@ async def handle_call_tool(
             payload = {
                 "topic": topic.title(),
                 "engine": engine.title(),
-                "raw_text": raw_text,
-                "citations": citation_urls
+                "answer": raw_text,
+                "sources": citation_urls
             }
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
