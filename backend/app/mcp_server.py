@@ -66,6 +66,14 @@ async def handle_list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
+            name="get_top_citations",
+            description="Get a list of the top domains and URLs that are cited most frequently by AI engines when referencing this brand. Use this when the user asks what sites or URLs they are getting cited the most off.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            }
+        ),
+        types.Tool(
             name="get_recommendations",
             description="Get AI-generated SEO/AEO recommendations to improve brand visibility",
             inputSchema={
@@ -520,6 +528,46 @@ async def handle_call_tool(
                 "sources": citation_urls
             }
             return [types.TextContent(type="text", text=json.dumps(payload))]
+            
+        elif name == "get_top_citations":
+            # Fetch mentions where this brand was cited
+            mentions = db.table("aeo_mentions").select("run_id").eq("workspace_id", workspace_id).eq("is_target_brand", True).execute().data
+            if not mentions:
+                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+                
+            run_ids = list(set([m["run_id"] for m in mentions]))
+            
+            # Fetch citations for those runs
+            citations = db.table("aeo_citations").select("url, domain").in_("run_id", run_ids).execute().data
+            if not citations:
+                return [types.TextContent(type="text", text="*No citation URLs found in the AI engine responses for your brand.*")]
+                
+            from collections import Counter
+            domain_counts = Counter()
+            url_counts = Counter()
+            
+            for c in citations:
+                d = c.get("domain")
+                u = c.get("url")
+                if d and d != "unknown":
+                    domain_counts[d] += 1
+                if u:
+                    url_counts[u] += 1
+                    
+            top_domains = domain_counts.most_common(10)
+            top_urls = url_counts.most_common(10)
+            
+            md = "**🏆 Top Domains Citing Your Brand**\n"
+            for d, count in top_domains:
+                md += f"• {d} ({count} citations)\n"
+                
+            md += "\n**📄 Top Specific URLs**\n"
+            for u, count in top_urls:
+                # Truncate long URLs for readability
+                display_u = u if len(u) < 60 else u[:57] + "..."
+                md += f"• [{display_u}]({u}) ({count} citations)\n"
+                
+            return [types.TextContent(type="text", text=md.strip())]
             
         elif name == "get_recommendations":
             recs = db.table("aeo_recommendations").select("content, engine, status").eq("workspace_id", workspace_id).execute().data
