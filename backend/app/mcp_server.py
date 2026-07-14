@@ -483,6 +483,13 @@ async def handle_call_tool(
             
             discovery = await run_discovery(url, num_queries=queries_count)
             brand_name = discovery.get("brand_name", url)
+            
+            # Update the workspace with the newly scanned brand name so the Pulse Card reflects it
+            try:
+                db.table("workspaces").update({"brand_name": brand_name, "domain": url}).eq("id", workspace_id).execute()
+            except Exception:
+                pass
+                
             suggested_queries = [q["text"] for q in discovery.get("suggested_queries", [])]
             
             async def run_single(query_text, engine_str):
