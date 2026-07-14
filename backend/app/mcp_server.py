@@ -468,11 +468,24 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "list_workstreams":
-            prompts = db.table("aeo_prompts").select("prompt_text").eq("workspace_id", workspace_id).execute().data
-            if not prompts:
+            # Fetch the most recent runs to get only recently tracked topics
+            runs = db.table("aeo_runs").select("prompt_id, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute().data
+            
+            if not runs:
                 return [types.TextContent(type="text", text="No topics are currently being tracked. Try running a live AEO scan first!")]
-            unique_topics = list(set([p["prompt_text"] for p in prompts]))
-            md = "**Currently Tracked Topics:**\n\n"
+                
+            unique_topics = []
+            for r in runs:
+                p_data = r.get("aeo_prompts")
+                if p_data:
+                    # Handle both dictionary and list return formats from Supabase joins
+                    p_text = p_data.get("prompt_text") if isinstance(p_data, dict) else p_data[0].get("prompt_text") if p_data else None
+                    if p_text and p_text not in unique_topics:
+                        unique_topics.append(p_text)
+                        if len(unique_topics) >= 10:  # Cap at 10 most recent to prevent massive lists
+                            break
+                            
+            md = "**Recently Tracked Topics:**\n\n"
             for t in unique_topics:
                 md += f"• {t}\n"
             return [types.TextContent(type="text", text=md)]
