@@ -229,9 +229,18 @@ async def handle_call_tool(
         return [types.TextContent(type="text", text=f"I couldn't find any existing tracking data for '{client_name}'. To get started, I can run a fresh live AEO scan. What is the website URL for {client_name}?")]
                     
     if not workspace_data:
-        res = db.table("workspaces").select("id, brand_name, domain").limit(1).execute()
-        if res.data:
-            workspace_data = res.data[0]
+        # Fallback to the workspace that was most recently run, instead of the oldest one
+        run_res = db.table("aeo_runs").select("workspace_id").order("created_at", desc=True).limit(1).execute()
+        if run_res.data:
+            recent_ws_id = run_res.data[0]["workspace_id"]
+            ws_res = db.table("workspaces").select("id, brand_name, domain").eq("id", recent_ws_id).execute()
+            if ws_res.data:
+                workspace_data = ws_res.data[0]
+        # If no runs exist, fallback to the most recently created workspace
+        if not workspace_data:
+            res = db.table("workspaces").select("id, brand_name, domain").order("created_at", desc=True).limit(1).execute()
+            if res.data:
+                workspace_data = res.data[0]
             
     if not workspace_data:
         return [types.TextContent(type="text", text="I don't have any tracking data for this brand yet. Would you like me to run a fresh live analysis? If so, please provide the website URL you'd like me to scan.")]
