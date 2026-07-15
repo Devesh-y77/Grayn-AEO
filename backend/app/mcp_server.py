@@ -470,19 +470,26 @@ async def handle_call_tool(
             volumes = db.table("aeo_keyword_volumes").select("keyword, search_volume").eq("workspace_id", workspace_id).in_("keyword", list(topic_wins.keys())).execute().data or []
             vol_map = {v["keyword"]: v.get("search_volume", 0) for v in volumes}
                 
+            topic_engine_count = {}
+            for r in runs:
+                topic = prompt_map.get(r["prompt_id"])
+                if topic:
+                    if topic not in topic_engine_count:
+                        topic_engine_count[topic] = set()
+                    topic_engine_count[topic].add(r["engine"])
+                    
             sorted_topics = sorted(topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
             topic_data = []
             for topic, engines in sorted_topics:
                 vol_num = vol_map.get(topic, 0)
                 vol_str = "high" if vol_num > 5000 else "med" if vol_num > 1000 else "low"
-                # If we don't have volume data, fallback to heuristic
                 if vol_num == 0:
                     vol_str = "high" if len(engines) > 2 else "med" if len(engines) == 2 else "low"
                     
                 topic_data.append({
                     "topic": topic,
                     "engines_won": len(engines),
-                    "total_engines": len(engines_seen) if 'engines_seen' in locals() else 6,
+                    "total_engines": len(topic_engine_count.get(topic, engines)),
                     "volume": vol_str
                 })
                 
@@ -494,9 +501,11 @@ async def handle_call_tool(
                 "rows": []
             }
             for topic, engines in sorted_topics:
+                tot = len(topic_engine_count.get(topic, engines))
+                if tot == 0: tot = 2
                 payload["rows"].append({
                     "name": topic,
-                    "share_of_voice": int(len(engines) / 6 * 100),
+                    "share_of_voice": int(len(engines) / tot * 100),
                     "delta": 0.0
                 })
                 
@@ -737,11 +746,22 @@ async def handle_call_tool(
                         
                         mentions_to_insert = []
                         for m in res.get('mentions', []):
+                            m_name = m.get('brand_name') or ""
+                            m_lower = m_name.lower().replace(".com", "").replace(".ai", "").strip()
+                            b_lower = brand_name.lower().replace(".com", "").replace(".ai", "").strip()
+                            is_target = m.get('is_target_brand', False)
+                            
+                            # Hard-enforce is_target_brand truthiness against LLM hallucination
+                            if is_target and b_lower not in m_lower and m_lower not in b_lower:
+                                is_target = False
+                            if not is_target and (b_lower in m_lower or m_lower in b_lower):
+                                is_target = True
+                                
                             mentions_to_insert.append({
                                 "workspace_id": workspace_id,
                                 "run_id": run_id,
-                                "brand_name": m.get('brand_name'),
-                                "is_target_brand": m.get('is_target_brand', False),
+                                "brand_name": m_name,
+                                "is_target_brand": is_target,
                                 "position": m.get('position')
                             })
                         if mentions_to_insert:
