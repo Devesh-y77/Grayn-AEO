@@ -36,9 +36,10 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "client_name": {
                         "type": "string",
-                        "description": "Optional. The name of the client or brand the user belongs to. Extract this from the chat context (e.g. channel name, user profile) if available, so you fetch data for the correct workspace."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., the last scanned URL or brand). If you absolutely don't know it, ask the user."
                     }
-                }
+                },
+                "required": ["client_name"]
             }
         ),
         types.Tool(
@@ -53,9 +54,10 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "client_name": {
                         "type": "string",
-                        "description": "Optional. The name of the client or brand the user belongs to. Extract this from the chat context (e.g. channel name, user profile) if available, so you fetch data for the correct workspace."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
                     }
-                }
+                },
+                "required": ["client_name"]
             }
         ),
         types.Tool(
@@ -63,7 +65,13 @@ async def handle_list_tools() -> list[types.Tool]:
             description="List the topics (also known as queries, search terms, or workstreams) currently being tracked for the brand. Use this when the user asks what queries or topics were run or are being tracked.",
             inputSchema={
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "client_name": {
+                        "type": "string",
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                    }
+                },
+                "required": ["client_name"]
             }
         ),
         types.Tool(
@@ -71,7 +79,13 @@ async def handle_list_tools() -> list[types.Tool]:
             description="Get a list of the top domains and URLs that are cited most frequently by AI engines when referencing this brand. Use this when the user asks what sites or URLs they are getting cited the most off.",
             inputSchema={
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "client_name": {
+                        "type": "string",
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                    }
+                },
+                "required": ["client_name"]
             }
         ),
         types.Tool(
@@ -162,9 +176,13 @@ async def handle_list_tools() -> list[types.Tool]:
                     "engine": {
                         "type": "string",
                         "description": "The engine (e.g. chatgpt, perplexity) to fetch proof for."
+                    },
+                    "client_name": {
+                        "type": "string",
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
                     }
                 },
-                "required": ["topic", "engine"]
+                "required": ["topic", "engine", "client_name"]
             }
         )
     ]
