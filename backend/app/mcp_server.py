@@ -700,7 +700,6 @@ async def handle_call_tool(
                             all_citations.append(c.get('url'))
                 LAST_SEARCHED_CITATIONS[str(workspace_id)] = list(set(all_citations))
                 
-            from datetime import datetime
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]}"
             
             for query, engine_results in grouped_results.items():
