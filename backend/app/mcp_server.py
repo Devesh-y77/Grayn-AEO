@@ -421,33 +421,30 @@ async def handle_call_tool(
                         competitor_name = None
                 
             if not competitor_name:
-                comp_topic_wins = {}
+                comp_run_wins = {}
                 for m in mentions:
                     if not m.get("is_target_brand"):
                         c_name = m.get("brand_name", "Unknown")
-                        # Basic normalizer
                         c_name = c_name.replace(".com", "").replace(".ai", "").strip().title()
                         if c_name.lower() == "abcmouse": c_name = "ABCmouse"
                         
                         run = next((r for r in runs if r["id"] == m["run_id"]), None)
                         if run:
-                            topic = prompt_map.get(run["prompt_id"], "Unknown Topic")
-                            if c_name not in comp_topic_wins:
-                                comp_topic_wins[c_name] = set()
-                            comp_topic_wins[c_name].add(topic)
+                            if c_name not in comp_run_wins:
+                                comp_run_wins[c_name] = set()
+                            comp_run_wins[c_name].add(run["id"])
                             
-                if not comp_topic_wins:
+                if not comp_run_wins:
                     return [types.TextContent(type="text", text="*No competitors found in the data.*")]
                     
-                sorted_comps = sorted(comp_topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
-                total_topics = len(set(run["prompt_id"] for run in runs))
-                total_topics = max(total_topics, 1) # Prevent div by 0
+                sorted_comps = sorted(comp_run_wins.items(), key=lambda x: len(x[1]), reverse=True)
+                total_runs = max(len(runs), 1) # Prevent div by 0
                 
                 payload = {
                     "summary": "Competitor AEO Landscape (Overview)",
                     "rows": [
-                        {"name": comp, "share_of_voice": int(len(topics) / total_topics * 100), "delta": 0.0}
-                        for comp, topics in sorted_comps[:10]
+                        {"name": comp, "share_of_voice": int(len(run_wins) / total_runs * 100), "delta": 0.0}
+                        for comp, run_wins in sorted_comps[:10]
                     ]
                 }
                 return [types.TextContent(type="text", text=json.dumps(payload))]
