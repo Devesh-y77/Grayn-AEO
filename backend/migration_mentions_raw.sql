@@ -1,0 +1,1 @@
+ALTER TABLE aeo_mentions ADD COLUMN IF NOT EXISTS raw_name TEXT;

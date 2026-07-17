@@ -20,7 +20,7 @@ class GoogleAIProvider(BaseProvider):
             system_instruction="You are Google AI Overviews. Provide a concise, highly factual answer to the query with inline citations and links where relevant. Summarize the best information across the web.",
         )
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def _query(self, prompt: str) -> EngineResult:
         response = await self.model.generate_content_async(prompt)
         raw_text = response.text
 

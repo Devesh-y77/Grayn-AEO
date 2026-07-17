@@ -22,7 +22,7 @@ class DeepSeekProvider(BaseProvider):
         )
         self.model = "deepseek-chat"
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         system_content = (
             "You are a helpful assistant answering real customer "
             "questions. Include specific product/brand names and "

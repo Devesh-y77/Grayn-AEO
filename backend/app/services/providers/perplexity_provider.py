@@ -22,7 +22,7 @@ class PerplexityProvider(BaseProvider):
         )
         self.model = "sonar-pro"
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             system_content = (
                 "You are a helpful assistant answering real customer "
@@ -54,10 +54,20 @@ class PerplexityProvider(BaseProvider):
             if usage:
                 cost += (usage.prompt_tokens * 3.0 + usage.completion_tokens * 15.0) / 1_000_000
 
+            # Extract native citations
+            native_citations = None
+            raw_citations = getattr(response, "citations", None)
+            if not raw_citations and hasattr(response, "model_dump"):
+                raw_citations = response.model_dump().get("citations")
+            
+            if isinstance(raw_citations, list):
+                native_citations = [{"url": str(url)} for url in raw_citations]
+
             return EngineResult(
                 engine=self.engine.value,
                 raw_text=raw_text,
                 cost_usd=round(cost, 6),
+                native_citations=native_citations,
             )
         except Exception as e:
             settings = get_settings()

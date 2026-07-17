@@ -231,6 +231,7 @@ class CitationData(BaseModel):
     url: str
     domain: str
     source_type: str
+    source: str = "judge_extracted"
 
 
 class JudgeExtraction(BaseModel):
@@ -248,6 +249,7 @@ class VisibilityScore(BaseModel):
     visibility_pct: float
     week_over_week_delta: Optional[float] = None
     per_engine: dict = {}
+    engine_confidences: dict = {}
     iso_week: str
 
 

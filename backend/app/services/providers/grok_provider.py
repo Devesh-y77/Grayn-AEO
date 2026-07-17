@@ -21,7 +21,7 @@ class GrokProvider(BaseProvider):
         )
         self.model = "grok-beta"
 
-    async def query(self, prompt: str) -> EngineResult:
+    async def _query(self, prompt: str) -> EngineResult:
         try:
             messages = [{"role": "user", "content": prompt}]
 

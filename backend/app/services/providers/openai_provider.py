@@ -19,7 +19,7 @@ class OpenAIProvider(BaseProvider):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = "gpt-4o"
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             system_content = (
                 "You are a helpful assistant answering real customer "

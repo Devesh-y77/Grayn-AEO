@@ -72,7 +72,7 @@ async def run_audit_background(job_id: str, domain: str, competitors: List[str],
                 else:
                     res = await provider.query(query_text, location="USA")
                 
-                ext = await extract_mentions_and_citations(res.raw_text, brand_name)
+                ext = await extract_mentions_and_citations(res.raw_text, brand_name, skip_citations=True)
                 return {
                     "query": query_text,
                     "engine": engine_str,

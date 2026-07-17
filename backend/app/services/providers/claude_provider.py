@@ -19,7 +19,7 @@ class ClaudeProvider(BaseProvider):
         self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = "claude-sonnet-4-6"
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             system_content = (
                 "You are a helpful assistant answering real customer questions. "

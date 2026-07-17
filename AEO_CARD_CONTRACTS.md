@@ -41,8 +41,13 @@ Renderer: `renderPulseCard`
   "engines": [                  // REQUIRED unless overall_score is present; recommended either way
     {
       "name": "ChatGPT",        // string (or `engine`)
-      "score": 82,              // 0-100
-      "delta": 3.4              // signed number — pt change; renders as ▲/▼
+      "score": 82,              // 0-100 (represents the average fractional mention rate)
+      "delta": 3.4,             // signed number — pt change; renders as ▲/▼
+      "confidence": 100         // optional 0-100: how strictly multi-pass outputs agreed.
+                                //   Formula per group: max(rate, 1.0 - rate) * 100.
+                                //   Note: Fully-failed groups (0 successful passes) are assigned 0 confidence 
+                                //   and included in the engine's average to penalize unreliable engines.
+                                //   Partially failed groups (e.g. 1 error, 1 success) are NOT penalized.
     },
     { "name": "Perplexity", "score": 68, "delta": -1.2 },
     { "name": "Gemini", "score": 71, "delta": 0 }
@@ -85,8 +90,9 @@ Renderer: `renderRivalsCard`
   "rows": [                      // REQUIRED unless summary present; use `rows` OR `competitors`
     {
       "name": "Otter.ai",       // string (or `competitor`)
-      "share_of_voice": 38,     // 0-100 (or `sov` or `score`)
-      "delta": 2.1              // signed pt change
+      "share_of_voice": 38,     // 0-100 (or `sov` or `score`); average mention rate
+      "delta": 2.1,             // signed pt change
+      "confidence": 67          // optional 0-100: consensus agreement
     },
     { "name": "Fireflies", "share_of_voice": 24, "delta": -0.8 }
   ]

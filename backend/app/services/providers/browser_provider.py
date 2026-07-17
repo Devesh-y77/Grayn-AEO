@@ -32,7 +32,7 @@ class BrowserProvider(BaseProvider):
                 ]
             )
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             await self._ensure_browser()
             context = await self._browser.new_context(

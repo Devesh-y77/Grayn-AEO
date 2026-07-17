@@ -93,13 +93,20 @@ async def run_single_prompt(
 
     # ── Run the judge ────────────────────────────────────
     try:
+        from app.services.citations import reconcile_citations
         target_brand = workspace.get("brand_name", "TargetBrand")
         brand_aliases = workspace.get("aliases", [])
+        has_native = bool(result.native_citations)
         extraction = await extract_mentions_and_citations(
             answer_text=result.raw_text,
             target_brand=target_brand,
             brand_aliases=brand_aliases,
+            skip_citations=has_native,
         )
+        
+        # Reconcile citations
+        extraction.citations = reconcile_citations(result, extraction.citations, "pending")
+        
     except Exception as exc:
         logger.error("Judge failed for prompt %s: %s", prompt_id, exc)
         failed_run_query = (
@@ -140,16 +147,21 @@ async def run_single_prompt(
         target_lower = workspace.get("brand_name", "").lower()
         aliases = [a.lower() for a in (workspace.get("aliases") or [])]
         
+        from app.services.brand_normalizer import normalize
         mentions_to_insert = []
         for m in extraction.mentions:
             m_lower = m.brand_name.lower()
             is_target = m.is_target_brand or target_lower in m_lower or any(a in m_lower for a in aliases)
             
+            canonical_m, brand_id = await normalize(m.brand_name, workspace_id, db)
+            
             attrs_dump = [a.model_dump() for a in m.attributes]
             mentions_to_insert.append({
                 "workspace_id": workspace_id,
                 "run_id": run_id,
-                "brand_name": m.brand_name,
+                "brand_name": canonical_m,
+                "raw_name": m.brand_name,
+                "brand_id": brand_id,
                 "is_target_brand": is_target,
                 "position": m.position,
                 "sentiment": m.sentiment.value,
@@ -168,6 +180,7 @@ async def run_single_prompt(
                 "url": c.url,
                 "domain": c.domain,
                 "source_type": c.source_type,
+                "source": getattr(c, "source", "judge_extracted")
             })
             
         if citations_to_insert:

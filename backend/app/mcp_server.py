@@ -118,6 +118,10 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional. List of AI models to check (e.g., ['gemini', 'openai'])"
+                    },
+                    "passes": {
+                        "type": "integer",
+                        "description": "Optional. Number of multi-pass iterations per query/engine (default: 3)."
                     }
                 }
             }
@@ -304,7 +308,7 @@ async def handle_call_tool(
                 summary_text = f"**{brand_display}** baseline established today. (No historical data to compare against yet).\nOne to mention: **{highlight}**"
                 
             payload = {
-                "overall_score": vis.visibility_pct,
+                "overall_score": int(round(vis.visibility_pct)),
                 "summary": summary_text,
                 "engines": []
             }
@@ -312,10 +316,13 @@ async def handle_call_tool(
             for eng, pct in vis.per_engine.items():
                 eng_data = {
                     "name": eng.title().replace('_', ' '),
-                    "score": pct
+                    "score": int(round(pct))
                 }
+                if vis.engine_confidences and eng in vis.engine_confidences:
+                    eng_data["confidence"] = vis.engine_confidences[eng]
+                    
                 if prev_vis and prev_vis.per_engine and eng in prev_vis.per_engine:
-                    eng_data["delta"] = pct - prev_vis.per_engine[eng]
+                    eng_data["delta"] = int(round(pct - prev_vis.per_engine[eng]))
                     
                 payload["engines"].append(eng_data)
                 
@@ -379,7 +386,7 @@ async def handle_call_tool(
             competitor_name = arguments.get("competitor_name")
             target_brand_arg = arguments.get("target_brand")
             
-            runs = db.table("aeo_runs").select("id, prompt_id, engine, created_at").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
+            runs = db.table("aeo_runs").select("id, prompt_id, engine, created_at, scan_group_id, status").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
             if not runs:
                 return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand, so I can't analyze competitors yet. Would you like me to run a live visibility scan right now?")]
                 
@@ -420,92 +427,90 @@ async def handle_call_tool(
                     if (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
                         competitor_name = None
                 
+            from app.services.consensus import compute_group_metrics, group_runs_by_scan_group, get_group_confidence
+            
             if not competitor_name:
-                comp_run_wins = {}
+                comp_to_mentions = defaultdict(set)
                 for m in mentions:
                     if not m.get("is_target_brand"):
                         c_name = m.get("brand_name", "Unknown")
-                        c_name = c_name.replace(".com", "").replace(".ai", "").strip().title()
-                        if c_name.lower() == "abcmouse": c_name = "ABCmouse"
-                        
-                        run = next((r for r in runs if r["id"] == m["run_id"]), None)
-                        if run:
-                            if c_name not in comp_run_wins:
-                                comp_run_wins[c_name] = set()
-                            comp_run_wins[c_name].add(run["id"])
+                        comp_to_mentions[c_name].add(m["run_id"])
                             
-                if not comp_run_wins:
+                if not comp_to_mentions:
                     return [types.TextContent(type="text", text="*No competitors found in the data.*")]
                     
-                sorted_comps = sorted(comp_run_wins.items(), key=lambda x: len(x[1]), reverse=True)
-                total_runs = max(len(runs), 1) # Prevent div by 0
+                comp_sov_scores = {}
+                runs_grouped = group_runs_by_scan_group(runs)
+                for comp, c_run_ids in comp_to_mentions.items():
+                    rate, groups, _ = compute_group_metrics(runs, c_run_ids)
+                    if groups > 0:
+                        conf_sum = sum(get_group_confidence(g, c_run_ids) for g in runs_grouped.values())
+                        avg_conf = int(round(conf_sum / groups)) if groups else 100
+                        comp_sov_scores[comp] = {
+                            "share_of_voice": int(round((rate / groups) * 100)),
+                            "confidence": avg_conf
+                        }
+                    
+                sorted_comps = sorted(comp_sov_scores.items(), key=lambda x: x[1]["share_of_voice"], reverse=True)
                 
                 payload = {
                     "summary": "Competitor AEO Landscape (Overview)",
                     "rows": [
-                        {"name": comp, "share_of_voice": int(len(run_wins) / total_runs * 100), "delta": 0.0}
-                        for comp, run_wins in sorted_comps[:10]
+                        {
+                            "name": comp, 
+                            "share_of_voice": data["share_of_voice"], 
+                            "delta": 0,
+                            "confidence": data["confidence"]
+                        }
+                        for comp, data in sorted_comps[:10]
                     ]
                 }
                 return [types.TextContent(type="text", text=json.dumps(payload))]
                 
             # Specific competitor analysis
-            topic_wins = {}
+            c_topic_run_ids = defaultdict(set)
             for m in mentions:
                 if m.get("brand_name", "").lower() == competitor_name.lower():
                     run = next((r for r in runs if r["id"] == m["run_id"]), None)
                     if run:
                         topic = prompt_map.get(run["prompt_id"], "Unknown Topic")
-                        if topic not in topic_wins:
-                            topic_wins[topic] = set()
-                        topic_wins[topic].add(run["engine"])
+                        c_topic_run_ids[topic].add(run["id"])
                         
-            if not topic_wins:
+            if not c_topic_run_ids:
                 return [types.TextContent(type="text", text=json.dumps({"error": f"{competitor_name} has no recorded wins yet."}))]
                 
-            # Fetch search volumes
-            volumes = db.table("aeo_keyword_volumes").select("keyword, search_volume").eq("workspace_id", workspace_id).in_("keyword", list(topic_wins.keys())).execute().data or []
-            vol_map = {v["keyword"]: v.get("search_volume", 0) for v in volumes}
-                
-            topic_engine_count = {}
+            topic_runs = defaultdict(list)
             for r in runs:
-                topic = prompt_map.get(r["prompt_id"])
-                if topic:
-                    if topic not in topic_engine_count:
-                        topic_engine_count[topic] = set()
-                    topic_engine_count[topic].add(r["engine"])
-                    
-            sorted_topics = sorted(topic_wins.items(), key=lambda x: len(x[1]), reverse=True)
-            topic_data = []
-            for topic, engines in sorted_topics:
-                vol_num = vol_map.get(topic, 0)
-                vol_str = "high" if vol_num > 5000 else "med" if vol_num > 1000 else "low"
-                if vol_num == 0:
-                    vol_str = "high" if len(engines) > 2 else "med" if len(engines) == 2 else "low"
-                    
-                topic_data.append({
-                    "topic": topic,
-                    "engines_won": len(engines),
-                    "total_engines": len(topic_engine_count.get(topic, engines)),
-                    "volume": vol_str
-                })
+                topic = prompt_map.get(r["prompt_id"], "Unknown Topic")
+                topic_runs[topic].append(r)
                 
-            top_topic = sorted_topics[0][0]
+            topic_sov_scores = {}
+            for topic, c_run_ids in c_topic_run_ids.items():
+                t_runs = topic_runs[topic]
+                rate, groups, _ = compute_group_metrics(t_runs, c_run_ids)
+                if groups > 0:
+                    runs_grouped = group_runs_by_scan_group(t_runs)
+                    conf_sum = sum(get_group_confidence(g, c_run_ids) for g in runs_grouped.values())
+                    avg_conf = int(round(conf_sum / groups)) if groups else 100
+                    topic_sov_scores[topic] = {
+                        "share_of_voice": int(round((rate / groups) * 100)),
+                        "confidence": avg_conf
+                    }
+                    
+            sorted_topics = sorted(topic_sov_scores.items(), key=lambda x: x[1]["share_of_voice"], reverse=True)
             
             payload = {
                 "competitor": competitor_name.title(),
-                "summary": f"Won {len(topic_wins)} topics. Biggest opportunity: {sorted_topics[0][0]}",
+                "summary": f"Won {len(topic_sov_scores)} topics. Biggest opportunity: {sorted_topics[0][0]}",
                 "rows": []
             }
-            for topic, engines in sorted_topics:
-                tot = len(topic_engine_count.get(topic, engines))
-                if tot == 0: tot = 2
+            for topic, data in sorted_topics:
                 payload["rows"].append({
                     "name": topic,
-                    "share_of_voice": int(len(engines) / tot * 100),
-                    "delta": 0.0
+                    "share_of_voice": data["share_of_voice"],
+                    "confidence": data["confidence"],
+                    "delta": 0
                 })
-                
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "list_workstreams":
@@ -635,11 +640,16 @@ async def handle_call_tool(
             location = args.get("location") or "USA"
             queries_count = args.get("queries") or 3
             models = args.get("models") or ["openai", "deepseek"]
+            passes = args.get("passes") or 3
+            
+            if queries_count * len(models) * passes > 200:
+                return [types.TextContent(type="text", text="Cost guard limit exceeded: max 200 total API calls allowed per scan.")]
             
             from app.services.discovery import run_discovery
             from app.services.providers.base import get_provider, EngineType
             from app.services.judge import extract_mentions_and_citations
             import asyncio
+            import uuid
             
             discovery = await run_discovery(url, num_queries=queries_count)
             brand_name = discovery.get("brand_name", url)
@@ -652,7 +662,7 @@ async def handle_call_tool(
                 
             suggested_queries = [q["text"] for q in discovery.get("suggested_queries", [])]
             
-            async def run_single(query_text, engine_str):
+            async def run_single(query_text, engine_str, pass_number, scan_group_id):
                 try:
                     # Smart Engine Mapper
                     n = engine_str.lower().strip()
@@ -674,22 +684,55 @@ async def handle_call_tool(
                     else:
                         res = await provider.query(query_text, location=location)
                     
-                    ext = await extract_mentions_and_citations(res.raw_text, brand_name)
+                    try:
+                        from app.services.citations import reconcile_citations
+                        has_native = bool(res.native_citations)
+                        ext = await extract_mentions_and_citations(res.raw_text, brand_name, skip_citations=has_native)
+                        ext.citations = reconcile_citations(res, ext.citations, f"mcp_scan_{scan_group_id}")
+                    except Exception as je:
+                        import asyncio
+                        judge_error_msg = "Timeout" if isinstance(je, (asyncio.TimeoutError, TimeoutError)) else str(je)
+                        return {
+                            "query": query_text,
+                            "engine": mapped_eng_str,
+                            "judge_failed": judge_error_msg,
+                            "raw_text": res.raw_text,
+                            "pass_number": pass_number,
+                            "scan_group_id": scan_group_id
+                        }
+                        
                     return {
                         "query": query_text,
                         "engine": mapped_eng_str,
                         "mentions": [m.dict() for m in ext.mentions],
                         "citations": [c.dict() for c in ext.citations],
-                        "raw_text": res.raw_text
+                        "raw_text": res.raw_text,
+                        "pass_number": pass_number,
+                        "scan_group_id": scan_group_id
                     }
                 except Exception as e:
-                    return {"query": query_text, "engine": engine_str, "error": str(e)}
+                    import asyncio
+                    error_msg = "Timeout" if isinstance(e, (asyncio.TimeoutError, TimeoutError)) else str(e)
+                    return {"query": query_text, "engine": engine_str, "error": error_msg, "pass_number": pass_number, "scan_group_id": scan_group_id}
             
-            tasks = [run_single(q, m) for q in suggested_queries for m in models]
+            tasks = []
+            for q in suggested_queries:
+                for m in models:
+                    scan_group_id = str(uuid.uuid4())
+                    for p_num in range(1, passes + 1):
+                        tasks.append(run_single(q, m, p_num, scan_group_id))
+            
             results = await asyncio.gather(*tasks)
             
             markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
             markdown_output += f"*Location:* {location or 'Global'}\n\n"
+            
+            failed_runs = [r for r in results if "error" in r or "judge_failed" in r]
+            if failed_runs:
+                failed_count = len(failed_runs)
+                total_count = len(results)
+                failed_engines = list(set([r.get("engine", "Unknown") for r in failed_runs]))
+                markdown_output += f"⚠️ {failed_count}/{total_count} calls failed: {', '.join(failed_engines)}\n\n"
             
             from collections import defaultdict
             grouped_results = defaultdict(list)
@@ -732,9 +775,12 @@ async def handle_call_tool(
                         "prompt_id": prompt_id,
                         "engine": engine_name,
                         "iso_week": iso_week,
-                        "status": "error" if "error" in res else "complete",
+                        "status": "error" if "error" in res else ("judge_failed" if "judge_failed" in res else "complete"),
+                        "error_message": res.get("error") or res.get("judge_failed"),
                         "raw_response": res.get("raw_text"),
-                        "cost_usd": 0.001
+                        "cost_usd": 0.001,
+                        "pass_number": res.get("pass_number", 1),
+                        "scan_group_id": res.get("scan_group_id")
                     })
                     r_resp = await asyncio.to_thread(r_insert.execute)
                     
@@ -744,20 +790,24 @@ async def handle_call_tool(
                         mentions_to_insert = []
                         for m in res.get('mentions', []):
                             m_name = m.get('brand_name') or ""
-                            m_lower = m_name.lower().replace(".com", "").replace(".ai", "").strip()
-                            b_lower = brand_name.lower().replace(".com", "").replace(".ai", "").strip()
+                            
+                            from app.services.brand_normalizer import normalize
+                            canonical_m, brand_id = await normalize(m_name, str(workspace_id), db)
+                            canonical_b, _ = await normalize(brand_name, str(workspace_id), db)
+                            
                             is_target = m.get('is_target_brand', False)
                             
                             # Hard-enforce is_target_brand truthiness against LLM hallucination
-                            if is_target and b_lower not in m_lower and m_lower not in b_lower:
+                            if is_target and canonical_b != canonical_m:
                                 is_target = False
-                            if not is_target and (b_lower in m_lower or m_lower in b_lower):
+                            if not is_target and canonical_b == canonical_m:
                                 is_target = True
                                 
                             mentions_to_insert.append({
                                 "workspace_id": workspace_id,
                                 "run_id": run_id,
-                                "brand_name": m_name,
+                                "brand_name": canonical_m,
+                                "brand_id": brand_id,
                                 "is_target_brand": is_target,
                                 "position": m.get('position')
                             })
@@ -778,31 +828,43 @@ async def handle_call_tool(
                             c_insert = db.table("aeo_citations").insert(citations_to_insert)
                             await asyncio.to_thread(c_insert.execute)
                             
+                engine_groups = defaultdict(list)
+                for res in engine_results:
+                    engine_groups[res.get('engine', 'Unknown').title()].append(res)
+                    
                 target_wins = []
                 target_losses = []
                 brand_tally = {}
                 
-                for res in engine_results:
-                    engine_name = res.get('engine', 'Unknown').title()
-                    
-                    if "error" in res:
-                        target_losses.append(engine_name)
+                for engine_name, res_list in engine_groups.items():
+                    successful_passes = [r for r in res_list if "error" not in r]
+                    if not successful_passes:
+                        target_losses.append(f"❌ {engine_name}")
                         continue
                         
-                    mentions = res.get('mentions', [])
-                    target_mention = next((m for m in mentions if m.get('is_target_brand')), None)
-                    
-                    if target_mention:
-                        pos = target_mention.get('position', '-')
+                    target_mentions = 0
+                    pos_list = []
+                    for res in successful_passes:
+                        mentions = res.get('mentions', [])
+                        target_mention = next((m for m in mentions if m.get('is_target_brand')), None)
+                        if target_mention:
+                            target_mentions += 1
+                            if target_mention.get('position'):
+                                pos_list.append(target_mention.get('position'))
+                        
+                        for m in mentions:
+                            c_name = m.get('brand_name', 'Unknown')
+                            if c_name:
+                                brand_tally[c_name] = brand_tally.get(c_name, 0) + 1
+                                
+                    mention_rate = target_mentions / len(successful_passes)
+                    if mention_rate >= 0.5:
+                        pos = pos_list[0] if pos_list else '-'
                         target_wins.append(f"✅ {engine_name} (#{pos})")
                     else:
                         target_losses.append(f"❌ {engine_name}")
                         
-                    for m in mentions:
-                        c_name = m.get('brand_name', 'Unknown')
-                        brand_tally[c_name] = brand_tally.get(c_name, 0) + 1
-                            
-                total_engines = len(engine_results)
+                total_engines = len(engine_groups)
                 win_count = len(target_wins)
                 
                 vis_str = f"*{win_count}/{total_engines} engines*"

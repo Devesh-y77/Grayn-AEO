@@ -20,7 +20,7 @@ class GeminiProvider(BaseProvider):
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel("gemini-2.0-flash")
 
-    async def query(self, prompt: str, location: str | None = None) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             full_prompt = (
                 f"You are a helpful assistant answering real customer questions. "

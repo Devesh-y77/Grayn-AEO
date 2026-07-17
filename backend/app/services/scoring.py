@@ -108,10 +108,9 @@ def compute_visibility(
     # Get all runs for this week
     runs = (
         db.table("aeo_runs")
-        .select("id, engine")
+        .select("id, engine, scan_group_id, status")
         .eq("workspace_id", workspace_id)
         .eq("iso_week", week)
-        .eq("status", "complete")
         .execute()
         .data
         or []
@@ -140,33 +139,42 @@ def compute_visibility(
     )
 
     mentioned_run_ids = set(m["run_id"] for m in mentions)
-    total_runs = len(runs)
-    mentioned_count = len(
-        set(r["id"] for r in runs if r["id"] in mentioned_run_ids)
-    )
-    visibility_pct = round((mentioned_count / total_runs) * 100, 1) if total_runs else 0.0
+
+    from app.services.consensus import compute_group_metrics, group_runs_by_scan_group, compute_consensus, get_group_confidence
+
+    total_rate, total_groups, total_passes = compute_group_metrics(runs, mentioned_run_ids)
+    visibility_pct = round((total_rate / total_groups) * 100, 1) if total_groups else 0.0
 
     # Per-engine breakdown
-    engine_totals = defaultdict(int)
-    engine_mentioned = defaultdict(int)
+    engine_groups = defaultdict(list)
     for r in runs:
-        engine_totals[r["engine"]] += 1
-        if r["id"] in mentioned_run_ids:
-            engine_mentioned[r["engine"]] += 1
+        engine_groups[r["engine"]].append(r)
+        
+    per_engine = {}
+    engine_confidences = {}
+    runs_grouped = group_runs_by_scan_group(runs)
+    
+    for eng, eng_runs in engine_groups.items():
+        rate, groups, _ = compute_group_metrics(eng_runs, mentioned_run_ids)
+        per_engine[eng] = round((rate / groups) * 100, 1) if groups else 0.0
+        
+        # Calculate confidence across the groups for this engine
+        if groups > 0:
+            eng_runs_grouped = group_runs_by_scan_group(eng_runs)
+            conf_sum = sum(get_group_confidence(g, mentioned_run_ids) for g in eng_runs_grouped.values())
+            avg_conf = int(round(conf_sum / len(eng_runs_grouped))) if len(eng_runs_grouped) else 100
+            engine_confidences[eng] = avg_conf
+        else:
+            engine_confidences[eng] = 100
 
-    per_engine = {
-        eng: round((engine_mentioned[eng] / engine_totals[eng]) * 100, 1)
-        for eng in engine_totals
-    }
 
     # Week-over-week delta
     delta = None
     prev_runs = (
         db.table("aeo_runs")
-        .select("id")
+        .select("id, engine, scan_group_id, status")
         .eq("workspace_id", workspace_id)
         .eq("iso_week", prev_week)
-        .eq("status", "complete")
         .execute()
         .data
         or []
@@ -183,16 +191,16 @@ def compute_visibility(
             .data
             or []
         )
-        prev_mentioned = len(
-            set(m["run_id"] for m in prev_mentions)
-        )
-        prev_pct = round((prev_mentioned / len(prev_runs)) * 100, 1)
+        prev_mentioned_run_ids = set(m["run_id"] for m in prev_mentions)
+        prev_rate, prev_groups, _ = compute_group_metrics(prev_runs, prev_mentioned_run_ids)
+        prev_pct = round((prev_rate / prev_groups) * 100, 1) if prev_groups else 0.0
         delta = round(visibility_pct - prev_pct, 1)
 
     return VisibilityScore(
         visibility_pct=visibility_pct,
         week_over_week_delta=delta,
         per_engine=per_engine,
+        engine_confidences=engine_confidences,
         iso_week=week,
     )
 
@@ -721,8 +729,7 @@ async def build_full_report(
     )
     recent_runs = []
     for r in recent_runs_data:
-        if r.get("status") == "error":
-            # Extract basic error string if raw_response exists
+        if r.get("status") == "error" and not r.get("error_message"):
             r["error_message"] = r.get("raw_response", "Unknown error")
         recent_runs.append(RunOut(**r))
 

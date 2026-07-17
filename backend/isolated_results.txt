@@ -1,0 +1,29 @@
+--- RAW DATA ---
+Total runs: 12
+0 mentions across all scan groups.
+
+--- CLAUDE 0.0 CHECK ---
+Raw Claude response excerpt:
+# Best Math Problem Solver Apps
+
+Here are the top-rated math problem solver apps available globally:
+
+---
+
+## 🥇 Top Picks
+
+### 1. **Photomath**
+- 📸 Scan problems with your camera
+- Shows **step-by-step solutions**
+- Covers arithmetic to calculus
+- Free with premium option (~$9.99/month)
+- 🔗 photomath.net
+
+### 2. **Wolfram Alpha**
+- Extremely **powerful computational engine**
+- Great for advanced math, calculus, statistics
+- Used by college students & professionals
+- ~$7.99/month for Pro
+- 🔗 wolf...
+
+--- GET_VISIBILITY_REPORT ---

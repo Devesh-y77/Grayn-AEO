@@ -112,10 +112,50 @@ def _mock_judge_extraction(
 # ── Public API ────────────────────────────────────────────
 
 
+from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception
+from app.services.providers.base import is_retryable_exception
+
+# Judge specific semaphore
+_judge_semaphore = None
+
+def get_judge_semaphore() -> asyncio.Semaphore:
+    global _judge_semaphore
+    if _judge_semaphore is None:
+        import os
+        limit = int(os.environ.get("JUDGE_MAX_CONCURRENCY", 5))
+        _judge_semaphore = asyncio.Semaphore(limit)
+    return _judge_semaphore
+
 async def extract_mentions_and_citations(
     answer_text: str,
     target_brand: str,
     brand_aliases: list[str] | None = None,
+    skip_citations: bool = False,
+) -> JudgeExtraction:
+    """
+    Run the judge on an engine answer.
+    Dynamically falls back across all available AI providers.
+    """
+    sem = get_judge_semaphore()
+    
+    @retry(
+        wait=wait_random_exponential(multiplier=2, max=10),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception(is_retryable_exception),
+        reraise=True
+    )
+    async def _run_with_retry():
+        async with sem:
+            async with asyncio.timeout(90.0):
+                return await _extract_mentions_and_citations_impl(answer_text, target_brand, brand_aliases, skip_citations)
+                
+    return await _run_with_retry()
+
+async def _extract_mentions_and_citations_impl(
+    answer_text: str,
+    target_brand: str,
+    brand_aliases: list[str] | None = None,
+    skip_citations: bool = False,
 ) -> JudgeExtraction:
     """
     Run the judge on an engine answer.
@@ -140,9 +180,13 @@ async def extract_mentions_and_citations(
     alias_hint = ""
     if brand_aliases:
         alias_hint = f" (also known as: {', '.join(brand_aliases)})"
+        
+    system_prompt = JUDGE_SYSTEM_PROMPT
+    if skip_citations:
+        system_prompt += "\n\nCRITICAL: SKIP CITATIONS. Return an empty array [] for 'citations'."
 
     user_prompt = (
-        f"INSTRUCTIONS: {JUDGE_SYSTEM_PROMPT}\n\n"
+        f"INSTRUCTIONS: {system_prompt}\n\n"
         f"Target brand: {target_brand}{alias_hint}\n\n"
         f"AI answer to analyse:\n---\n{answer_text}\n---"
     )
