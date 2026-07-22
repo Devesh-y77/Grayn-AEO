@@ -341,7 +341,8 @@ async def handle_call_tool(
             if not runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
                 
-            topic_runs = [r for r in runs if r.get("aeo_prompts") and r["aeo_prompts"].get("prompt_text", "").lower() == topic_name.lower()]
+            topic_keywords = topic_name.lower().split()
+            topic_runs = [r for r in runs if r.get("aeo_prompts") and all(kw in r["aeo_prompts"].get("prompt_text", "").lower() for kw in topic_keywords)]
             if not topic_runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": f"No recent runs found for topic '{topic_name}'"}))]
                 
