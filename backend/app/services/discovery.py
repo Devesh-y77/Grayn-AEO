@@ -74,20 +74,73 @@ async def run_discovery(url: str, num_queries: int = 10) -> dict:
     text_content = soup.get_text(separator=" ", strip=True)
     snippet = f"URL: {url}\nTitle: {title}\nDescription: {meta_desc}\n\nContent:\n{text_content[:3000]}"
 
-    # We use OpenAI by default for discovery extraction (or fallback to Gemini/Mock if not available)
-    try:
-        provider = get_provider(EngineType.OPENAI)
-    except ValueError:
-        try:
-            provider = get_provider(EngineType.GEMINI)
-        except ValueError:
-            provider = get_provider(EngineType.GROQ)
-
     prompt = f"{DISCOVERY_SYSTEM_PROMPT.replace('{num_queries}', str(num_queries))}\n\nWebsite Content:\n{snippet}"
-    result = await provider.query(prompt)
+
+    # Multi-provider fallback chain — mirrors content_analyzer.py
+    from app.config import get_settings
+    settings = get_settings()
+
+    raw_text = None
+    last_error = None
+    providers_order = ["openai", "deepseek", "groq", "gemini"]
+
+    for prov in providers_order:
+        try:
+            if prov == "openai" and getattr(settings, "OPENAI_API_KEY", None):
+                provider = get_provider(EngineType.OPENAI)
+                result = await provider.query(prompt)
+                raw_text = result.raw_text
+                break
+            elif prov == "deepseek" and getattr(settings, "DEEPSEEK_API_KEY", None):
+                import openai as _openai
+                client = _openai.AsyncOpenAI(
+                    api_key=settings.DEEPSEEK_API_KEY,
+                    base_url="https://api.deepseek.com"
+                )
+                resp = await client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                raw_text = resp.choices[0].message.content or ""
+                break
+            elif prov == "groq" and getattr(settings, "GROQ_API_KEY", None):
+                import openai as _openai
+                client = _openai.AsyncOpenAI(
+                    api_key=settings.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1"
+                )
+                resp = await client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                raw_text = resp.choices[0].message.content or ""
+                break
+            elif prov == "gemini" and getattr(settings, "GEMINI_API_KEY", None):
+                provider = get_provider(EngineType.GEMINI)
+                result = await provider.query(prompt)
+                raw_text = result.raw_text
+                break
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Discovery provider '{prov}' failed: {e}. Trying next.")
+            continue
+
+    if not raw_text:
+        logger.error(f"All discovery providers failed. Last error: {last_error}")
+        domain = url.split("://")[-1].split("/")[0].replace("www.", "")
+        return {
+            "brand_name": domain.split(".")[0].title(),
+            "suggested_queries": [
+                {"text": f"best alternatives to {domain.split('.')[0]}"},
+                {"text": f"top {domain.split('.')[0]} competitors"},
+                {"text": f"what is {domain.split('.')[0]}"},
+            ][:num_queries]
+        }
 
     try:
-        raw = result.raw_text.strip()
+        raw = raw_text.strip()
         if raw.startswith("```json"):
             raw = raw[7:-3]
         elif raw.startswith("```"):
@@ -96,7 +149,7 @@ async def run_discovery(url: str, num_queries: int = 10) -> dict:
         parsed = json.loads(raw.strip())
         return parsed
     except json.JSONDecodeError:
-        logger.warning(f"Failed to parse LLM discovery response. Raw: {result.raw_text}")
+        logger.warning(f"Failed to parse LLM discovery response. Raw: {raw_text}")
         domain = url.split("://")[-1].split("/")[0].replace("www.", "")
         return {
             "brand_name": domain.split(".")[0].title(),
