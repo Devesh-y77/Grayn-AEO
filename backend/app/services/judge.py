@@ -164,11 +164,11 @@ async def _extract_mentions_and_citations_impl(
     settings = get_settings()
 
     available_keys = []
-    if settings.openai_available: available_keys.append("openai")
-    if settings.groq_available: available_keys.append("groq")
-    if settings.gemini_available: available_keys.append("gemini")
-    if settings.anthropic_available: available_keys.append("anthropic")
     if settings.deepseek_available: available_keys.append("deepseek")
+    if settings.groq_available: available_keys.append("groq")
+    if settings.anthropic_available: available_keys.append("anthropic")
+    if settings.openai_available: available_keys.append("openai")
+    if settings.gemini_available: available_keys.append("gemini")
 
     if not available_keys:
         if settings.USE_MOCK_PROVIDERS:
@@ -214,7 +214,7 @@ async def _extract_mentions_and_citations_impl(
                 response = await client.chat.completions.create(
                     model="llama3-8b-8192",
                     messages=[{"role": "user", "content": user_prompt}],
-                    response_format={"type": {"type": "json_object"}},
+                    response_format={"type": "json_object"},
                     temperature=0.1,
                 )
                 raw_json = response.choices[0].message.content or ""
@@ -247,7 +247,7 @@ async def _extract_mentions_and_citations_impl(
                 from anthropic import AsyncAnthropic
                 client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
                 response = await client.messages.create(
-                    model="claude-3-haiku-20240307",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=1500,
                     messages=[{"role": "user", "content": user_prompt}],
                     temperature=0.1,
@@ -259,7 +259,12 @@ async def _extract_mentions_and_citations_impl(
             if match:
                 raw_json = match.group(1)
 
-            parsed = json.loads(raw_json)
+            try:
+                parsed = json.loads(raw_json)
+            except json.JSONDecodeError as exc:
+                logger.warning(f"JSONDecodeError with {provider}: {exc}. Raw: {raw_json[:200]}")
+                last_exc = exc
+                continue
             return JudgeExtraction(**parsed)
 
         except Exception as exc:

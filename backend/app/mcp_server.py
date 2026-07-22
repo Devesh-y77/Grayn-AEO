@@ -10,6 +10,7 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Any
+from app.services.db_helpers import chunked_in_fetch
 
 from fastapi import APIRouter, Request, HTTPException
 from mcp.server import Server
@@ -356,7 +357,7 @@ async def handle_call_tool(
             latest_runs = [r for r in topic_runs if (r.get("scan_group_id") or r.get("id")) == engine_latest_group.get(r["engine"])]
             run_ids = [r["id"] for r in latest_runs]
             
-            mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", run_ids)
             mentioned_run_ids = set(m["run_id"] for m in mentions if m.get("is_target_brand"))
             
             from app.services.consensus import compute_group_metrics
@@ -411,7 +412,7 @@ async def handle_call_tool(
             active_run_ids = set()
             if target_brand_arg:
                 ws_run_ids = [r["id"] for r in runs]
-                target_mentions = db.table("aeo_mentions").select("run_id").in_("run_id", ws_run_ids).eq("is_target_brand", True).eq("brand_name", target_brand_arg).execute().data
+                target_mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", ws_run_ids, extra_filters={"is_target_brand": True, "brand_name": target_brand_arg})
                 active_run_ids = {m["run_id"] for m in target_mentions}
                 
             if not active_run_ids:
@@ -433,7 +434,7 @@ async def handle_call_tool(
             prompts = db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).execute().data
             prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
             
-            mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", run_ids)
             
             # Prevent AI from mistakenly passing the user's own brand or generic query terms as a competitor name
             if competitor_name:
@@ -602,7 +603,8 @@ async def handle_call_tool(
             run_ids = list(set([m["run_id"] for m in mentions]))
             
             # Fetch the runs for these mentions so we can filter by the most recent scan session
-            runs = db.table("aeo_runs").select("id, created_at").eq("workspace_id", workspace_id).in_("id", run_ids).order("created_at", desc=True).execute().data
+            runs = chunked_in_fetch(db, "aeo_runs", "id, created_at", workspace_id, "id", run_ids)
+            runs = sorted(runs, key=lambda x: x["created_at"], reverse=True)
             if not runs:
                 return [types.TextContent(type="text", text="*No runs found for citations.*")]
                 
@@ -611,7 +613,7 @@ async def handle_call_tool(
             recent_run_ids = [r["id"] for r in runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
             
             # Fetch citations for those recent runs
-            citations = db.table("aeo_citations").select("url, domain").in_("run_id", recent_run_ids).execute().data
+            citations = chunked_in_fetch(db, "aeo_citations", "url, domain", workspace_id, "run_id", recent_run_ids)
             if not citations:
                 return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
                 
@@ -990,8 +992,8 @@ async def handle_call_tool(
                 runs = db.table("aeo_runs").select("id").eq("prompt_id", prompt_id).execute()
                 if runs.data:
                     run_ids = [r["id"] for r in runs.data]
-                    citations = db.table("aeo_citations").select("url").in_("run_id", run_ids).limit(10).execute()
-                    urls = list(set([c["url"] for c in citations.data if c["url"]]))
+                    citations = chunked_in_fetch(db, "aeo_citations", "url", workspace_id, "run_id", run_ids)
+                    urls = list(set([c["url"] for c in citations if c["url"]]))[:10]
             
             # Fallback to live cache if not in DB
             if not urls and topic == LAST_SEARCHED_TOPICS.get(str(workspace_id)):

@@ -10,7 +10,10 @@ Automated onboarding flow:
 import httpx
 from bs4 import BeautifulSoup
 import json
+import logging
 from app.services.providers.base import get_provider, EngineType
+
+logger = logging.getLogger(__name__)
 
 DISCOVERY_SYSTEM_PROMPT = """You are an expert SEO and Answer Engine Optimization analyst.
 You will be provided with the text content of a company's website homepage.
@@ -93,4 +96,13 @@ async def run_discovery(url: str, num_queries: int = 10) -> dict:
         parsed = json.loads(raw.strip())
         return parsed
     except json.JSONDecodeError:
-        raise ValueError(f"Failed to parse LLM discovery response. Raw: {result.raw_text}")
+        logger.warning(f"Failed to parse LLM discovery response. Raw: {result.raw_text}")
+        domain = url.split("://")[-1].split("/")[0].replace("www.", "")
+        return {
+            "brand_name": domain.split(".")[0].title(),
+            "suggested_queries": [
+                {"text": f"{domain} alternatives"},
+                {"text": f"what is {domain}"},
+                {"text": f"best tools like {domain}"}
+            ][:num_queries]
+        }
