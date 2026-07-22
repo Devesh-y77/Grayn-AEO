@@ -1032,6 +1032,9 @@ async def handle_call_tool(
             
     except Exception as e:
         logger.exception(f"MCP Tool error: {e}")
+        error_msg = str(e).lower()
+        if "429" in error_msg or "quota" in error_msg:
+            return [types.TextContent(type="text", text="AI provider rate limits reached. Please wait a minute and try again.")]
         return [types.TextContent(type="text", text=f"Tool Execution Failed: {str(e)}")]
 
 # FastAPI Router integration

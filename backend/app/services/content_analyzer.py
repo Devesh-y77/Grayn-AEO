@@ -59,41 +59,80 @@ async def analyze_content_gaps(urls: list[str], prompt_text: str, brand_name: st
         "Do NOT output JSON."
     )
 
-    import google.generativeai as genai
     from app.config import get_settings
-    
     settings = get_settings()
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    
-    model = genai.GenerativeModel(
-        "gemini-2.0-flash",
-        system_instruction=system_prompt.format(brand_name=brand_name, prompt_text=prompt_text)
-    )
-    
-    try:
-        response = await asyncio.to_thread(
-            model.generate_content,
-            f"COMPETITOR CONTENT:\n{combined_text}"
-        )
-        return response.text or "Failed to generate strategy."
-    except Exception as e:
-        print(f"Gemini API failed: {str(e)}. Falling back to OpenAI.")
+
+    providers = ["deepseek", "groq", "anthropic", "openai", "gemini"]
+    user_content = f"COMPETITOR CONTENT:\n{combined_text}"
+    sys_prompt = system_prompt.format(brand_name=brand_name, prompt_text=prompt_text)
+
+    for provider in providers:
         try:
-            import openai
-            client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt.format(brand_name=brand_name, prompt_text=prompt_text),
-                    },
-                    {"role": "user", "content": f"COMPETITOR CONTENT:\n{combined_text}"},
-                ],
-                temperature=0.7,
-                max_tokens=3000,
-            )
-            return response.choices[0].message.content or "Failed to generate strategy via fallback."
-        except Exception as fallback_e:
-            traceback.print_exc()
-            return f"Error analyzing content gaps: Gemini failed ({str(e)}), OpenAI fallback failed ({str(fallback_e)})"
+            if provider == "deepseek" and settings.DEEPSEEK_API_KEY:
+                import openai
+                client = openai.AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+                response = await client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    temperature=0.7,
+                )
+                return response.choices[0].message.content or "Failed to generate strategy."
+                
+            elif provider == "groq" and settings.GROQ_API_KEY:
+                import openai
+                client = openai.AsyncOpenAI(api_key=settings.GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+                response = await client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    temperature=0.7,
+                )
+                return response.choices[0].message.content or "Failed to generate strategy."
+
+            elif provider == "anthropic" and settings.ANTHROPIC_API_KEY:
+                import anthropic
+                client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+                response = await client.messages.create(
+                    model="claude-3-5-sonnet-latest",
+                    max_tokens=3000,
+                    system=sys_prompt,
+                    messages=[{"role": "user", "content": user_content}],
+                    temperature=0.7,
+                )
+                return response.content[0].text or "Failed to generate strategy."
+
+            elif provider == "openai" and settings.OPENAI_API_KEY:
+                import openai
+                client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                response = await client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    temperature=0.7,
+                )
+                return response.choices[0].message.content or "Failed to generate strategy."
+
+            elif provider == "gemini" and settings.GEMINI_API_KEY:
+                import google.generativeai as genai
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                model = genai.GenerativeModel(
+                    "gemini-2.0-flash",
+                    system_instruction=sys_prompt
+                )
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    user_content
+                )
+                return response.text or "Failed to generate strategy."
+        except Exception as e:
+            print(f"{provider} failed for content gap analysis: {e}")
+            continue
+
+    return "Content gap analysis is temporarily unavailable. Please try again later."
