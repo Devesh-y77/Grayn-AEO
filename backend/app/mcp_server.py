@@ -669,9 +669,16 @@ async def handle_call_tool(
             
             force_rediscovery = args.get("force_rediscovery", False)
             brand_name = workspace_data.get("brand_name")
+            ws_domain = workspace_data.get("domain") or ""
             suggested_queries = []
             
-            if brand_name and not force_rediscovery:
+            # Only use cache if the domain matches — prevents stale queries from another brand
+            from urllib.parse import urlparse as _urlparse
+            _parsed_url = _urlparse(url if "://" in url else "https://" + url)
+            _url_domain = _parsed_url.netloc.replace("www.", "").lower()
+            domain_matches = ws_domain and (_url_domain in ws_domain or ws_domain in _url_domain)
+            
+            if brand_name and domain_matches and not force_rediscovery:
                 cached_prompts = db.table("aeo_prompts").select("prompt_text").eq("workspace_id", workspace_id).eq("intent", "live_scan").limit(queries_count).execute()
                 if cached_prompts.data and len(cached_prompts.data) > 0:
                     suggested_queries = [p["prompt_text"] for p in cached_prompts.data]
@@ -681,11 +688,16 @@ async def handle_call_tool(
                 brand_name = discovery.get("brand_name", url)
                 
                 try:
-                    db.table("workspaces").update({"brand_name": brand_name, "domain": url}).eq("id", workspace_id).execute()
+                    db.table("workspaces").update({"brand_name": brand_name, "domain": _url_domain}).eq("id", workspace_id).execute()
                 except Exception:
                     pass
                     
                 suggested_queries = [q["text"] for q in discovery.get("suggested_queries", [])]
+                # Clear stale prompts for this workspace before inserting fresh ones
+                try:
+                    db.table("aeo_prompts").delete().eq("workspace_id", workspace_id).eq("intent", "live_scan").execute()
+                except Exception:
+                    pass
                 
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]}"
             
@@ -844,12 +856,12 @@ async def handle_call_tool(
             markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
             markdown_output += f"*Location:* {location or 'Global'}\n\n"
             
-            failed_runs = [r for r in results if "error" in r or "judge_failed" in r]
+            failed_runs = [r for r in results if r and ("error" in r)]
             if failed_runs:
                 failed_count = len(failed_runs)
-                total_count = len(results)
-                failed_engines = list(set([r.get("engine", "Unknown") for r in failed_runs]))
-                markdown_output += f"⚠️ {failed_count}/{total_count} calls failed: {', '.join(failed_engines)}\n\n"
+                total_count = len([r for r in results if r])
+                failed_engines = sorted(set([r.get("engine", "Unknown") for r in failed_runs]))
+                markdown_output += f"\u26a0\ufe0f {failed_count}/{total_count} calls failed: {', '.join(failed_engines)}\n\n"
             
 
             grouped_results = defaultdict(list)
