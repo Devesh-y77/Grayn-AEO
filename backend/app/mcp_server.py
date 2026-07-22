@@ -40,7 +40,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "client_name": {
                         "type": "string",
-                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., the last scanned URL or brand). If you absolutely don't know it, ask the user."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., the last scanned URL or brand). If you absolutely don't know it, ask the user (e.g., 'netflix')."
                     }
                 },
                 "required": ["client_name"]
@@ -58,7 +58,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "client_name": {
                         "type": "string",
-                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., 'netflix')."
                     }
                 },
                 "required": ["client_name"]
@@ -72,7 +72,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "client_name": {
                         "type": "string",
-                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., 'netflix')."
                     }
                 },
                 "required": ["client_name"]
@@ -86,7 +86,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "client_name": {
                         "type": "string",
-                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., 'netflix')."
                     }
                 },
                 "required": ["client_name"]
@@ -108,7 +108,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The URL of the brand/company to analyze"
+                        "description": "The URL of the brand/company to analyze (e.g., 'https://netflix.com')"
                     },
                     "location": {
                         "type": "string",
@@ -138,7 +138,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "description": "Optional. The target topic or keyword to analyze. Leave blank to use the topic from your last live analysis."
+                        "description": "Optional. The target topic or keyword to analyze (e.g., 'what is the best streaming service'). Leave blank to use the topic from your last live analysis."
                     }
                 }
             }
@@ -151,7 +151,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "topic_name": {
                         "type": "string",
-                        "description": "The name of the topic/keyword to analyze."
+                        "description": "The name of the topic/keyword to analyze (e.g., 'what is the best streaming service')."
                     }
                 },
                 "required": ["topic_name"]
@@ -187,7 +187,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "client_name": {
                         "type": "string",
-                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history."
+                        "description": "REQUIRED. The name of the client or brand the user is asking about. You MUST extract this from the conversation history (e.g., 'netflix')."
                     }
                 },
                 "required": ["topic", "engine", "client_name"]
