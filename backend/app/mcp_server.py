@@ -52,6 +52,10 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "topic_filter": {
+                        "type": "string",
+                        "description": "Optional. Space-separated keywords to filter topics (e.g., 'streaming')."
+                    },
                     "competitor_name": {
                         "type": "string",
                         "description": "Optional. The name of the specific competitor to analyze. NEVER put the user's own brand name here. Leave blank for a general overview."
@@ -404,6 +408,7 @@ async def handle_call_tool(
         elif name == "get_rival_analysis":
             competitor_name = arguments.get("competitor_name")
             target_brand_arg = arguments.get("target_brand")
+            topic_filter = arguments.get("topic_filter")
             
             runs = db.table("aeo_runs").select("id, prompt_id, engine, created_at, scan_group_id, status").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
             if not runs:
@@ -434,6 +439,13 @@ async def handle_call_tool(
             run_ids = [r["id"] for r in runs]
             prompts = db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).execute().data
             prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
+            
+            if topic_filter:
+                filter_kws = topic_filter.lower().split()
+                runs = [r for r in runs if r.get("prompt_id") in prompt_map and all(kw in prompt_map[r["prompt_id"]].lower() for kw in filter_kws)]
+                run_ids = [r["id"] for r in runs]
+                if not runs:
+                    return [types.TextContent(type="text", text=f"*No tracking data found matching topic filter '{topic_filter}'.*")]
             
             mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", run_ids)
             
