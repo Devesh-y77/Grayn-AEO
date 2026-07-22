@@ -279,14 +279,12 @@ def get_supabase() -> Client:
     global _client
     if _client is None:
         settings = get_settings()
-        if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
-            logger.info("Initializing HTTP Supabase API Client")
-            _client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-        elif settings.DATABASE_URL:
+        if settings.DATABASE_URL:
             logger.info("Initializing Direct Postgres DB Client (bypass PostgREST API)")
             _client = DirectPostgresClient(settings.DATABASE_URL)
+        elif settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
+            logger.info("Initializing HTTP Supabase API Client")
+            _client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
         else:
-            raise RuntimeError(
-                "Neither (SUPABASE_URL + SUPABASE_SERVICE_KEY) nor DATABASE_URL is configured in .env!"
-            )
+            raise ValueError("Missing database configuration in environment")
     return _client
