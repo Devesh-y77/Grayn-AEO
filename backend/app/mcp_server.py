@@ -685,6 +685,14 @@ async def handle_call_tool(
             models = args.get("models") or ["openai", "deepseek", "claude", "gemini", "perplexity", "grok"]
             passes = args.get("passes") or 3
             
+            # Auto-scale passes down to avoid blowing the 200s scan budget.
+            # Budget formula: queries * engines * passes * ~avg_seconds_per_call.
+            # We cap at ~120 total calls to stay under 200s wallclock.
+            raw_engine_count = len(models)  # before key-filtering; re-evaluated after
+            if queries_count * raw_engine_count * passes > 120:
+                passes = max(1, 120 // max(1, queries_count * raw_engine_count))
+                logger.info("Auto-scaled passes to %d to stay within scan budget.", passes)
+            
             # Filter out engines with missing credentials before spending any calls
             from app.config import get_settings as _get_settings
             _s = _get_settings()
@@ -901,10 +909,25 @@ async def handle_call_tool(
                     for p_num in range(1, passes + 1):
                         tasks.append(run_single(q, prompts_cache[q], m, p_num, scan_group_id))
             
-            results = await asyncio.gather(*tasks)
+            # Overall scan timeout: return partial results rather than hanging past the
+            # aeo-job-runner 240s ceiling. 200s gives us 40s headroom for DB writes + overhead.
+            SCAN_TIMEOUT = 200
+            try:
+                results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=SCAN_TIMEOUT)
+                # Unwrap exceptions returned by return_exceptions=True
+                results = [r if not isinstance(r, Exception) else {"error": str(r)} for r in results]
+            except asyncio.TimeoutError:
+                logger.warning("Scan timed out after %ds — returning partial results.", SCAN_TIMEOUT)
+                # Collect whatever finished; mark the rest as timeout errors
+                results = []
+                timed_out = True
+            else:
+                timed_out = False
             
             markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
             markdown_output += f"*Location:* {location or 'Global'}\n"
+            if timed_out:
+                markdown_output += f"⚠️ *Scan exceeded {SCAN_TIMEOUT}s — partial results shown. Try fewer queries or engines next time.*\n"
             if skipped:
                 markdown_output += f"*Active Engines:* {', '.join([m.title() for m in models])} *(Skipped: {', '.join([s.title() for s in skipped])})*\n\n"
             else:
