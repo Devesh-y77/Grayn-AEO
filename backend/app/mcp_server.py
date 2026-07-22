@@ -659,8 +659,28 @@ async def handle_call_tool(
             models = args.get("models") or ["openai", "deepseek", "claude", "gemini", "perplexity", "grok"]
             passes = args.get("passes") or 3
             
+            # Filter out engines with missing credentials before spending any calls
+            from app.config import get_settings as _get_settings
+            _s = _get_settings()
+            _avail_map = {
+                "openai":     _s.openai_available,
+                "claude":     _s.anthropic_available,
+                "gemini":     _s.gemini_available,
+                "groq":       _s.groq_available,
+                "deepseek":   _s.deepseek_available,
+                "grok":       _s.grok_available,
+                "perplexity": _s.perplexity_available,
+            }
+            skipped = [m for m in models if not _avail_map.get(m, False)]
+            models = [m for m in models if _avail_map.get(m, False)]
+            if skipped:
+                logger.info("Skipping engines with missing API keys: %s", skipped)
+            if not models:
+                return [types.TextContent(type="text", text="No engines are available — all API keys are missing. Please configure at least one provider key in your environment.")]
+            
             if queries_count * len(models) * passes > 200:
                 return [types.TextContent(type="text", text="Cost guard limit exceeded: max 200 total API calls allowed per scan.")]
+
             
             from app.services.discovery import run_discovery
             from app.services.providers.base import get_provider, EngineType
