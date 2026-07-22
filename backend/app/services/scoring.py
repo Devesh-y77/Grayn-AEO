@@ -14,6 +14,7 @@ Computes all BRD-defined metrics from raw run/mention/citation data:
 
 import logging
 from collections import defaultdict, Counter
+from app.services.db_helpers import chunked_in_fetch
 from datetime import datetime, timedelta
 from supabase import Client
 from app.models.schemas import (
@@ -127,16 +128,7 @@ def compute_visibility(
     run_ids = [r["id"] for r in runs]
 
     # Get mentions for these runs where brand is target
-    mentions = (
-        db.table("aeo_mentions")
-        .select("run_id, is_target_brand")
-        .eq("workspace_id", workspace_id)
-        .in_("run_id", run_ids)
-        .eq("is_target_brand", True)
-        .execute()
-        .data
-        or []
-    )
+    mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, is_target_brand", workspace_id, "run_id", run_ids, extra_filters={"is_target_brand": True})
 
     mentioned_run_ids = set(m["run_id"] for m in mentions)
 
@@ -181,16 +173,7 @@ def compute_visibility(
     )
     if prev_runs:
         prev_run_ids = [r["id"] for r in prev_runs]
-        prev_mentions = (
-            db.table("aeo_mentions")
-            .select("run_id")
-            .eq("workspace_id", workspace_id)
-            .in_("run_id", prev_run_ids)
-            .eq("is_target_brand", True)
-            .execute()
-            .data
-            or []
-        )
+        prev_mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", prev_run_ids, extra_filters={"is_target_brand": True})
         prev_mentioned_run_ids = set(m["run_id"] for m in prev_mentions)
         prev_rate, prev_groups, _ = compute_group_metrics(prev_runs, prev_mentioned_run_ids)
         prev_pct = round((prev_rate / prev_groups) * 100, 1) if prev_groups else 0.0
@@ -232,15 +215,7 @@ def compute_share_of_voice(
 
     run_ids = [r["id"] for r in runs]
 
-    all_mentions = (
-        db.table("aeo_mentions")
-        .select("brand_name, position, run_id, sentiment")
-        .eq("workspace_id", workspace_id)
-        .in_("run_id", run_ids)
-        .execute()
-        .data
-        or []
-    )
+    all_mentions = chunked_in_fetch(db, "aeo_mentions", "brand_name, position, run_id, sentiment", workspace_id, "run_id", run_ids)
 
     # Count mentions per brand
     brand_counts: dict[str, int] = defaultdict(int)
@@ -328,15 +303,7 @@ def compute_citations(
 
     run_ids = [r["id"] for r in runs]
 
-    citations = (
-        db.table("aeo_citations")
-        .select("domain, source_type, url")
-        .eq("workspace_id", workspace_id)
-        .in_("run_id", run_ids)
-        .execute()
-        .data
-        or []
-    )
+    citations = chunked_in_fetch(db, "aeo_citations", "domain, source_type, url", workspace_id, "run_id", run_ids)
 
     domain_counts: dict[str, dict] = {}
     for c in citations:
@@ -417,16 +384,7 @@ def compute_competitor_sources(
     run_ids = [r["id"] for r in runs]
 
     # Get competitor mentions to find which runs have competitors
-    comp_mentions = (
-        db.table("aeo_mentions")
-        .select("run_id, brand_name")
-        .eq("workspace_id", workspace_id)
-        .in_("run_id", run_ids)
-        .eq("is_target_brand", False)
-        .execute()
-        .data
-        or []
-    )
+    comp_mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name", workspace_id, "run_id", run_ids, extra_filters={"is_target_brand": False})
 
     # Group run_ids by competitor brand
     comp_run_ids: dict[str, set] = defaultdict(set)
@@ -435,15 +393,7 @@ def compute_competitor_sources(
 
     result = {}
     for comp_name, c_run_ids in comp_run_ids.items():
-        citations = (
-            db.table("aeo_citations")
-            .select("url, domain, source_type")
-            .eq("workspace_id", workspace_id)
-            .in_("run_id", list(c_run_ids))
-            .execute()
-            .data
-            or []
-        )
+        citations = chunked_in_fetch(db, "aeo_citations", "url, domain, source_type", workspace_id, "run_id", list(c_run_ids))
         
         domain_counts = defaultdict(int)
         for c in citations:
@@ -483,16 +433,7 @@ def compute_attribute_breakdown(
 
     run_ids = [r["id"] for r in runs]
 
-    mentions = (
-        db.table("aeo_mentions")
-        .select("attributes")
-        .eq("workspace_id", workspace_id)
-        .in_("run_id", run_ids)
-        .eq("is_target_brand", True)
-        .execute()
-        .data
-        or []
-    )
+    mentions = chunked_in_fetch(db, "aeo_mentions", "attributes", workspace_id, "run_id", run_ids, extra_filters={"is_target_brand": True})
 
     attr_stats = defaultdict(lambda: {"total": 0, "positive": 0})
 
@@ -540,10 +481,10 @@ def compute_platform_scorecard(
         return []
 
     prompt_ids = list(set([r["prompt_id"] for r in runs if r.get("prompt_id")]))
-    prompts = db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).in_("id", prompt_ids).execute().data or [] if prompt_ids else []
+    prompts = chunked_in_fetch(db, "aeo_prompts", "id, prompt_text", workspace_id, "id", prompt_ids) if prompt_ids else []
     prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
 
-    mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", [r["id"] for r in runs]).execute().data or []
+    mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", [r["id"] for r in runs])
 
     engine_totals = defaultdict(int)
     for r in runs:
@@ -595,10 +536,10 @@ def compute_topic_performance(
     if not runs:
         return []
 
-    prompts = db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).in_("id", [r["prompt_id"] for r in runs if r.get("prompt_id")]).execute().data or []
+    prompts = chunked_in_fetch(db, "aeo_prompts", "id, prompt_text", workspace_id, "id", [r["prompt_id"] for r in runs if r.get("prompt_id")])
     prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
 
-    mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", [r["id"] for r in runs]).execute().data or []
+    mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", [r["id"] for r in runs])
 
     prompt_totals = defaultdict(int)
     for r in runs:
@@ -671,7 +612,7 @@ def compute_historical_trend(
             continue
 
         run_ids = [r["id"] for r in runs]
-        mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").eq("workspace_id", workspace_id).in_("run_id", run_ids).execute().data or []
+        mentions = chunked_in_fetch(db, "aeo_mentions", "run_id, brand_name, is_target_brand", workspace_id, "run_id", run_ids)
         
         target_hits = set()
         for m in mentions:
