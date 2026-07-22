@@ -34,7 +34,7 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="get_visibility_report",
-            description="Get the aggregate AI visibility report and pulse score.",
+            description="Get the aggregate AI visibility report and pulse score. Use for: e.g., 'show me my visibility', 'how is my brand doing'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -48,7 +48,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_rival_analysis",
-            description="Get competitor analysis across multiple topics to see where they are winning.",
+            description="Get competitor analysis across multiple topics to see where they are winning. Use for: e.g., 'who are my competitors', 'show rival analysis'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -70,7 +70,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="list_workstreams",
-            description="List the topics (also known as queries, search terms, or workstreams) currently being tracked for the brand. Use this when the user asks what queries or topics were run or are being tracked.",
+            description="List the topics (also known as queries, search terms, or workstreams) currently being tracked for the brand. Use for: e.g., 'what queries are we tracking', 'list workstreams'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -84,7 +84,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_top_citations",
-            description="Get a list of the top domains and URLs that are cited most frequently by AI engines when referencing this brand. Use this when the user asks what sites or URLs they are getting cited the most off.",
+            description="Get a list of the top domains and URLs that are cited most frequently by AI engines when referencing this brand. Use for: e.g., 'what sites mention us most', 'show top citations'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -98,7 +98,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_recommendations",
-            description="Get AI-generated SEO/AEO recommendations to improve brand visibility",
+            description="Get AI-generated SEO/AEO recommendations to improve brand visibility. Use for: e.g., 'how can I improve', 'give me recommendations'.",
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -106,7 +106,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="trigger_aeo_analysis",
-            description="Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility.",
+            description="Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility. Use for: e.g., 'run a live scan for netflix.com', 'trigger analysis'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -136,7 +136,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_content_gaps",
-            description="Generate a strategic content gap brief by analyzing top competitor URLs for a given topic.",
+            description="Generate a strategic content gap brief by analyzing top competitor URLs for a given topic. Use for: e.g., 'what content should we write for [topic]', 'show content gaps'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -149,7 +149,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="analyze_topic",
-            description="Deep dive into a specific topic to see which engines cite the brand and who the top competitors are.",
+            description="Deep dive into a specific topic to see which engines cite the brand and who the top competitors are. Use for: e.g., 'analyze topic [topic]', 'how did we do on [topic]'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -163,7 +163,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="analyze_drop_root_cause",
-            description="Analyze why a brand dropped in visibility for a specific topic by comparing today's AI output with 3 weeks ago.",
+            description="Analyze why a brand dropped in visibility for a specific topic by comparing today's AI output with 3 weeks ago. Use for: e.g., 'why did we drop for [topic]', 'root cause analysis'.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -177,7 +177,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_raw_ai_answer",
-            description="Fetch the exact raw text output generated by an AI engine for a specific topic, serving as proof.",
+            description="Fetch the exact raw text output generated by an AI engine for a specific topic, serving as proof. Use for: e.g., 'show me the raw AI output for [topic]', 'what did chatgpt say exactly'.",
             inputSchema={
                 "type": "object",
                 "properties": {
