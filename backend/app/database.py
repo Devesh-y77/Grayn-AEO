@@ -36,6 +36,8 @@ class DirectTableQuery:
         self.is_single = False
         self.is_maybe_single = False
         self.insert_data = None
+        self.upsert_data = None
+        self.on_conflict = None
         self.update_data = None
         self.delete_flag = False
 
@@ -78,6 +80,11 @@ class DirectTableQuery:
         self.insert_data = data
         return self
 
+    def upsert(self, data, on_conflict=None):
+        self.upsert_data = data
+        self.on_conflict = on_conflict
+        return self
+
     def update(self, data):
         self.update_data = data
         return self
@@ -118,6 +125,42 @@ class DirectTableQuery:
                     cur.execute(query_str, args)
                     row = cur.fetchone()
                     return QueryResult([dict(row)] if row else [])
+
+            elif self.upsert_data is not None:
+                # ── UPSERT ───────────────────────────────────────
+                data = self.upsert_data
+                if isinstance(data, list) and not data:
+                    return QueryResult([])
+                
+                is_list = isinstance(data, list)
+                sample = data[0] if is_list else data
+                keys = list(sample.keys())
+                columns_str = ", ".join(keys)
+                placeholders = ", ".join(["%s"] * len(keys))
+                
+                query_str = f"INSERT INTO {self.table_name} ({columns_str}) VALUES "
+                
+                args = []
+                if is_list:
+                    value_clauses = []
+                    for row in data:
+                        value_clauses.append(f"({placeholders})")
+                        args.extend([row[k] for k in keys])
+                    query_str += ", ".join(value_clauses)
+                else:
+                    query_str += f"({placeholders})"
+                    args = [sample[k] for k in keys]
+
+                if self.on_conflict:
+                    set_clauses = [f"{k} = EXCLUDED.{k}" for k in keys]
+                    query_str += f" ON CONFLICT ({self.on_conflict}) DO UPDATE SET {', '.join(set_clauses)}"
+                else:
+                    query_str += " ON CONFLICT DO NOTHING"
+                    
+                query_str += " RETURNING *;"
+                cur.execute(query_str, args)
+                rows = cur.fetchall()
+                return QueryResult([dict(r) for r in rows])
 
             elif self.update_data is not None:
                 # ── UPDATE ───────────────────────────────────────
