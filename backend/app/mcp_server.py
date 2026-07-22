@@ -435,18 +435,19 @@ async def handle_call_tool(
             
             mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
             
-            # Prevent AI from mistakenly passing the user's own brand as a competitor
+            # Prevent AI from mistakenly passing the user's own brand or generic query terms as a competitor name
             if competitor_name:
                 ws_brand = (workspace_data.get("brand_name") or "").lower()
                 ws_domain = (workspace_data.get("domain") or "").lower()
-                c_lower = competitor_name.lower()
-                if c_lower:
-                    if (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
-                        competitor_name = None
+                c_lower = competitor_name.lower().strip()
+                generic_terms = {"ai search", "search", "ai", "all", "competitors", "competitor", "overview", "general", "landscape", "analysis"}
+                if c_lower in generic_terms or (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
+                    competitor_name = None
                 
             from app.services.consensus import compute_group_metrics, group_runs_by_scan_group, get_group_confidence
             
-            if not competitor_name:
+            # Helper logic to return general overview payload
+            def _build_overview_payload():
                 comp_to_mentions = defaultdict(set)
                 for m in mentions:
                     if not m.get("is_target_brand"):
@@ -483,6 +484,9 @@ async def handle_call_tool(
                     ]
                 }
                 return [types.TextContent(type="text", text=json.dumps(payload))]
+
+            if not competitor_name:
+                return _build_overview_payload()
                 
             # Specific competitor analysis
             c_topic_run_ids = defaultdict(set)
@@ -494,7 +498,8 @@ async def handle_call_tool(
                         c_topic_run_ids[topic].add(run["id"])
                         
             if not c_topic_run_ids:
-                return [types.TextContent(type="text", text=json.dumps({"error": f"{competitor_name} has no recorded wins yet."}))]
+                # If specific competitor was not found in mentions, fallback to overview payload
+                return _build_overview_payload()
                 
             topic_runs = defaultdict(list)
             for r in runs:
