@@ -116,8 +116,8 @@ async def run_single_prompt(
                 "prompt_id": prompt_id,
                 "engine": engine.value,
                 "iso_week": week,
-                "raw_response": f"Judge extraction failed: {exc}\n\nRaw answer:\n{result.raw_text}",
-                "status": "error",
+                "raw_response": result.raw_text,
+                "status": "judge_failed",
                 "cost_usd": result.cost_usd,
             })
         )

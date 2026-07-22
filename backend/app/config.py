@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     ADMIN_TOKEN: str = "change-me-in-production"
     
     # ── MCP & External Services ───────────────────────────
-    MCP_API_KEY: str = ""
+    MCP_AUTH_TOKEN: str = ""
     GRAYN_AEO_API_KEY: str = ""
 
     # ── AI Providers ──────────────────────────────────────

@@ -591,7 +591,7 @@ def compute_topic_performance(
     db: Client, workspace_id: str, week: str, top_competitor: str | None
 ) -> list[TopicPerformanceEntry]:
     """SC-12: Visibility per topic compared to the top competitor."""
-    runs = db.table("aeo_runs").select("id, prompt_id").eq("workspace_id", workspace_id).eq("iso_week", week).eq("status", "complete").execute().data or []
+    runs = db.table("aeo_runs").select("id, prompt_id, scan_group_id, status").eq("workspace_id", workspace_id).eq("iso_week", week).execute().data or []
     if not runs:
         return []
 
@@ -622,8 +622,12 @@ def compute_topic_performance(
     for pid, total in prompt_totals.items():
         if total == 0: continue
         text = prompt_map.get(pid, "Unknown Query")
-        target_vis = round((len(target_prompt_hits[pid]) / total) * 100, 1)
-        comp_vis = round((len(comp_prompt_hits[pid]) / total) * 100, 1)
+        prompt_runs = [r for r in runs if r.get("prompt_id") == pid]
+        from app.services.consensus import compute_group_metrics
+        t_rate, groups, _ = compute_group_metrics(prompt_runs, target_prompt_hits[pid])
+        c_rate, _, _ = compute_group_metrics(prompt_runs, comp_prompt_hits[pid])
+        target_vis = round((t_rate / groups) * 100, 1) if groups else 0.0
+        comp_vis = round((c_rate / groups) * 100, 1) if groups else 0.0
         gap = target_vis - comp_vis
         status = "Leading" if gap >= 5 else "Behind" if gap <= -5 else "Close"
         
@@ -661,7 +665,7 @@ def compute_historical_trend(
     target_lower = ws.get("brand_name", "").lower()
     
     for w in iso_weeks:
-        runs = db.table("aeo_runs").select("id").eq("workspace_id", workspace_id).eq("iso_week", w).eq("status", "complete").execute().data or []
+        runs = db.table("aeo_runs").select("id, scan_group_id, status").eq("workspace_id", workspace_id).eq("iso_week", w).execute().data or []
         if not runs:
             trend_data.append({"week": w, "visibility": 0.0})
             continue
@@ -674,7 +678,9 @@ def compute_historical_trend(
             if m["is_target_brand"]:
                 target_hits.add(m["run_id"])
         
-        vis_pct = round((len(target_hits) / len(runs)) * 100, 1) if runs else 0.0
+        from app.services.consensus import compute_group_metrics
+        rate, groups, _ = compute_group_metrics(runs, target_hits)
+        vis_pct = round((rate / groups) * 100, 1) if groups else 0.0
         trend_data.append({"week": w, "visibility": vis_pct})
         
     return trend_data

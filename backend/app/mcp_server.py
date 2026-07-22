@@ -333,7 +333,7 @@ async def handle_call_tool(
             if not topic_name:
                 return [types.TextContent(type="text", text=json.dumps({"error": "topic_name is required"}))]
                 
-            runs = db.table("aeo_runs").select("id, engine, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute().data
+            runs = db.table("aeo_runs").select("id, engine, scan_group_id, status, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute().data
             if not runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
                 
@@ -341,41 +341,55 @@ async def handle_call_tool(
             if not topic_runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": f"No recent runs found for topic '{topic_name}'"}))]
                 
-            # Filter to just the most recent run per engine
-            engine_latest = {}
+            # Filter to just the most recent scan_group_id per engine
+            engine_latest_group = {}
             for r in topic_runs:
                 eng = r["engine"]
-                if eng not in engine_latest:
-                    engine_latest[eng] = r
+                group = r.get("scan_group_id") or r.get("id")
+                if eng not in engine_latest_group:
+                    engine_latest_group[eng] = group
             
-            latest_runs = list(engine_latest.values())
+            # Keep only the runs that belong to the latest scan group for their engine
+            latest_runs = [r for r in topic_runs if (r.get("scan_group_id") or r.get("id")) == engine_latest_group.get(r["engine"])]
             run_ids = [r["id"] for r in latest_runs]
             
             mentions = db.table("aeo_mentions").select("run_id, brand_name, is_target_brand").in_("run_id", run_ids).execute().data
+            mentioned_run_ids = set(m["run_id"] for m in mentions if m.get("is_target_brand"))
+            
+            from app.services.consensus import compute_group_metrics
             
             engines_won = []
             competitor_tally = {}
             
+            # Group by engine for display
+            engine_runs = {}
             for r in latest_runs:
-                won = False
-                for m in mentions:
-                    if m["run_id"] == r["id"]:
-                        if m.get("is_target_brand"):
-                            won = True
-                        else:
-                            c_name = m.get("brand_name", "Unknown")
-                            competitor_tally[c_name] = competitor_tally.get(c_name, 0) + 1
+                eng = r["engine"]
+                if eng not in engine_runs:
+                    engine_runs[eng] = []
+                engine_runs[eng].append(r)
+                
+            for eng, e_runs in engine_runs.items():
+                rate, groups, _ = compute_group_metrics(e_runs, mentioned_run_ids)
                 engines_won.append({
-                    "engine": r["engine"].title().replace("_", " "),
-                    "cited": won
+                    "engine": eng.title().replace("_", " "),
+                    "cited": rate > 0.5  # Consider it a win if > 50% of passes cited
                 })
+                
+            for m in mentions:
+                if not m.get("is_target_brand"):
+                    c_name = m.get("brand_name", "Unknown")
+                    competitor_tally[c_name] = competitor_tally.get(c_name, 0) + 1
                 
             sorted_comps = sorted(competitor_tally.items(), key=lambda x: x[1], reverse=True)
             top_competitors = [c[0] for c in sorted_comps[:3]]
             
+            total_rate, total_groups, _ = compute_group_metrics(latest_runs, mentioned_run_ids)
+            visibility_pct = int((total_rate / total_groups) * 100) if total_groups else 0
+            
             payload = {
                 "topic": topic_name,
-                "visibility": int(len([e for e in engines_won if e["cited"]]) / max(1, len(engines_won)) * 100),
+                "visibility": visibility_pct,
                 "winners": top_competitors,
                 "engines_hit": [e["engine"] for e in engines_won if e["cited"]],
                 "summary": f"Analyzed on {len(engines_won)} engines."
@@ -639,7 +653,7 @@ async def handle_call_tool(
             
             location = args.get("location") or "USA"
             queries_count = args.get("queries") or 3
-            models = args.get("models") or ["openai", "deepseek"]
+            models = args.get("models") or ["openai", "deepseek", "claude", "gemini", "perplexity", "grok"]
             passes = args.get("passes") or 3
             
             if queries_count * len(models) * passes > 200:
@@ -975,10 +989,14 @@ async def handle_sse(request: Request):
     """MCP SSE endpoint."""
     from app.config import get_settings
     settings = get_settings()
-    if settings.MCP_API_KEY:
-        api_key = request.headers.get("x-api-key")
-        if api_key != settings.MCP_API_KEY:
-            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP API Key")
+    if not settings.MCP_AUTH_TOKEN:
+        raise HTTPException(status_code=500, detail="Server misconfiguration: MCP_AUTH_TOKEN not set")
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid Authorization header")
+    import secrets
+    if not secrets.compare_digest(auth_header.split("Bearer ")[1], settings.MCP_AUTH_TOKEN):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP Auth Token")
             
     async with sse.connect_sse(
         request.scope, request.receive, request._send
@@ -992,9 +1010,13 @@ async def handle_messages(request: Request):
     """MCP POST messages endpoint."""
     from app.config import get_settings
     settings = get_settings()
-    if settings.MCP_API_KEY:
-        api_key = request.headers.get("x-api-key")
-        if api_key != settings.MCP_API_KEY:
-            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP API Key")
+    if not settings.MCP_AUTH_TOKEN:
+        raise HTTPException(status_code=500, detail="Server misconfiguration: MCP_AUTH_TOKEN not set")
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid Authorization header")
+    import secrets
+    if not secrets.compare_digest(auth_header.split("Bearer ")[1], settings.MCP_AUTH_TOKEN):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP Auth Token")
             
     await sse.handle_post_message(request.scope, request.receive, request._send)
