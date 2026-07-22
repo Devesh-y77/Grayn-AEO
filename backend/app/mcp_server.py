@@ -879,19 +879,24 @@ async def handle_call_tool(
             results = await asyncio.gather(*tasks)
             
             markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
-            markdown_output += f"*Location:* {location or 'Global'}\n\n"
+            markdown_output += f"*Location:* {location or 'Global'}\n"
+            if skipped:
+                markdown_output += f"*Active Engines:* {', '.join([m.title() for m in models])} *(Skipped: {', '.join([s.title() for s in skipped])})*\n\n"
+            else:
+                markdown_output += f"*Active Engines:* {', '.join([m.title() for m in models])}\n\n"
             
             failed_runs = [r for r in results if r and ("error" in r)]
             if failed_runs:
                 failed_count = len(failed_runs)
                 total_count = len([r for r in results if r])
-                failed_engines = sorted(set([r.get("engine", "Unknown") for r in failed_runs]))
-                markdown_output += f"\u26a0\ufe0f {failed_count}/{total_count} calls failed: {', '.join(failed_engines)}\n\n"
+                failed_engines = sorted(set([r.get("engine", "Unknown").title() for r in failed_runs]))
+                markdown_output += f"⚠️ {failed_count}/{total_count} calls failed on: {', '.join(failed_engines)}\n\n"
             
 
             grouped_results = defaultdict(list)
             for res in results:
-                grouped_results[res.get('query')].append(res)
+                if res and res.get('query'):
+                    grouped_results[res.get('query')].append(res)
                 
             if grouped_results:
                 first_query = list(grouped_results.keys())[0]
@@ -915,7 +920,7 @@ async def handle_call_tool(
                 for engine_name, res_list in engine_groups.items():
                     successful_passes = [r for r in res_list if "error" not in r]
                     if not successful_passes:
-                        target_losses.append(f"❌ {engine_name}")
+                        target_losses.append(engine_name)
                         continue
                         
                     target_mentions = 0
@@ -938,16 +943,16 @@ async def handle_call_tool(
                         pos = pos_list[0] if pos_list else '-'
                         target_wins.append(f"✅ {engine_name} (#{pos})")
                     else:
-                        target_losses.append(f"❌ {engine_name}")
+                        target_losses.append(engine_name)
                         
                 total_engines = len(engine_groups)
                 win_count = len(target_wins)
                 
-                vis_str = f"*{win_count}/{total_engines} engines*"
+                vis_str = f"*{win_count}/{total_engines} active engines*"
                 if target_wins:
                     vis_str += f" ({', '.join(target_wins)})"
-                if target_losses:
-                    vis_str += f" ({', '.join(target_losses)})"
+                elif total_engines > 0:
+                    vis_str += " *(Not cited)*"
                     
                 top_brands_str = "None identified"
                 if brand_tally:
