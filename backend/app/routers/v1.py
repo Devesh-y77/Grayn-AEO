@@ -275,8 +275,8 @@ async def get_content_gaps(
     
     run_ids = [r["id"] for r in runs]
     
-    # Supabase Python client doesn't support generic 'in_' well sometimes, but we can try or fetch all and filter
-    citations = db.table("aeo_citations").select("url").eq("workspace_id", ws_id).in_("run_id", run_ids).execute().data or []
+    from app.services.db_helpers import chunked_in_fetch
+    citations = chunked_in_fetch(db, "aeo_citations", "url", ws_id, "run_id", run_ids)
     
     unique_urls = list(set([c["url"] for c in citations if c.get("url")]))
     # Filter out empty or obviously bad URLs, take top 15 for diverse data

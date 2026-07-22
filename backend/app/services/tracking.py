@@ -221,18 +221,26 @@ async def trigger_batch_run(
     iso_week = _current_iso_week()
 
     # Get prompts
-    query = (
-        db.table("aeo_prompts")
-        .select("*")
-        .eq("workspace_id", workspace_id)
-        .eq("is_active", True)
-    )
     if prompt_ids:
-        query = query.in_("id", prompt_ids)
-
-    prompts_query = query
-    prompts_resp = await asyncio.to_thread(prompts_query.execute)
-    prompts = prompts_resp.data or []
+        from app.services.db_helpers import chunked_in_fetch
+        prompts = chunked_in_fetch(
+            db, 
+            "aeo_prompts", 
+            "*", 
+            workspace_id, 
+            "id", 
+            prompt_ids,
+            extra_filters={"is_active": True}
+        )
+    else:
+        prompts_query = (
+            db.table("aeo_prompts")
+            .select("*")
+            .eq("workspace_id", workspace_id)
+            .eq("is_active", True)
+        )
+        prompts_resp = await asyncio.to_thread(prompts_query.execute)
+        prompts = prompts_resp.data or []
 
     engines = engines_filter if engines_filter else list(EngineType)
 
