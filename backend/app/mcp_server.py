@@ -1,19 +1,21 @@
-import asyncio
 """
 Grayn AEO — MCP Server
 
 Exposes AEO visibility data to Claude Desktop and Cursor via Model Context Protocol.
 """
-
-from fastapi import APIRouter, Request, HTTPException
-from sse_starlette.sse import EventSourceResponse
-from typing import Any
+import asyncio
 import json
 import logging
+import uuid
+from collections import Counter, defaultdict
 from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Request, HTTPException
 from mcp.server import Server
-import mcp.types as types
 from mcp.server.sse import SseServerTransport
+import mcp.types as types
+from sse_starlette.sse import EventSourceResponse
 
 logger = logging.getLogger(__name__)
 
@@ -608,7 +610,7 @@ async def handle_call_tool(
             if not citations:
                 return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
                 
-            from collections import Counter
+
             domain_counts = Counter()
             url_counts = Counter()
             
@@ -849,7 +851,7 @@ async def handle_call_tool(
                 failed_engines = list(set([r.get("engine", "Unknown") for r in failed_runs]))
                 markdown_output += f"⚠️ {failed_count}/{total_count} calls failed: {', '.join(failed_engines)}\n\n"
             
-            from collections import defaultdict
+
             grouped_results = defaultdict(list)
             for res in results:
                 grouped_results[res.get('query')].append(res)
