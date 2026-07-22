@@ -16,7 +16,7 @@ CREATE TABLE workspaces (
 );
 
 -- 1.5 Brands
-CREATE TABLE aeo_brands (
+CREATE TABLE brands (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     canonical_name TEXT NOT NULL,
@@ -81,7 +81,7 @@ CREATE TABLE aeo_mentions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
     run_id UUID REFERENCES aeo_runs(id) ON DELETE CASCADE,
-    brand_id UUID REFERENCES aeo_brands(id) ON DELETE SET NULL,
+    brand_id UUID REFERENCES brands(id) ON DELETE SET NULL,
     raw_name TEXT,
     brand_name TEXT NOT NULL,
     is_target_brand BOOLEAN DEFAULT false,
@@ -152,7 +152,7 @@ CREATE TABLE aeo_digests (
 -- ---------------------------------------------------------------------------
 -- Enable RLS on all tables
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
-ALTER TABLE aeo_brands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aeo_prompts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aeo_competitors ENABLE ROW LEVEL SECURITY;
@@ -180,7 +180,7 @@ CREATE POLICY workspace_isolation_policy ON workspaces
     FOR ALL USING (id = current_workspace_id());
 
 -- Policy for tables with workspace_id
-CREATE POLICY workspace_isolation_policy ON aeo_brands FOR ALL USING (workspace_id = current_workspace_id());
+CREATE POLICY workspace_isolation_policy ON brands FOR ALL USING (workspace_id = current_workspace_id());
 CREATE POLICY workspace_isolation_policy ON api_keys FOR ALL USING (workspace_id = current_workspace_id());
 CREATE POLICY workspace_isolation_policy ON aeo_prompts FOR ALL USING (workspace_id = current_workspace_id());
 CREATE POLICY workspace_isolation_policy ON aeo_competitors FOR ALL USING (workspace_id = current_workspace_id());
