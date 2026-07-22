@@ -60,6 +60,7 @@ CREATE TABLE aeo_runs (
     parsed_response JSONB,
     cost_usd NUMERIC(10, 6),
     status TEXT DEFAULT 'pending',
+    error_message TEXT,
     pass_number INT DEFAULT 1,
     scan_group_id UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
