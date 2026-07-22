@@ -267,24 +267,30 @@ class DirectPostgresClient:
 # ── Database Initialization ────────────────────────────────
 
 _client = None
-
+import threading
+_thread_local = threading.local()
 
 def get_supabase() -> Client:
     """
     Return the cached database client.
     
-    If SUPABASE_SERVICE_KEY is configured, returns a Supabase HTTP Client.
+    If SUPABASE_SERVICE_KEY is configured, returns a thread-local Supabase HTTP Client.
     Otherwise, returns a DirectPostgresClient querying DB directly via psycopg2.
     """
     global _client
-    if _client is None:
-        settings = get_settings()
-        if settings.DATABASE_URL:
+    settings = get_settings()
+    
+    # Priority 1: Supabase HTTP API (Thread-safe via threading.local to prevent httpx corruption)
+    if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
+        if not hasattr(_thread_local, 'client'):
+            _thread_local.client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        return _thread_local.client
+        
+    # Priority 2: Direct Postgres Connection
+    if settings.DATABASE_URL:
+        if _client is None:
             logger.info("Initializing Direct Postgres DB Client (bypass PostgREST API)")
             _client = DirectPostgresClient(settings.DATABASE_URL)
-        elif settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
-            logger.info("Initializing HTTP Supabase API Client")
-            _client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-        else:
-            raise ValueError("Missing database configuration in environment")
-    return _client
+        return _client
+
+    raise ValueError("Missing database configuration in environment")
