@@ -436,7 +436,7 @@ def create_prompt(
     """QP-01: Create a single prompt."""
     data = {
         "workspace_id": workspace["id"],
-        "prompt_text": body.prompt_text,
+        "prompt_text": body.prompt_text.strip().lower(),
         "intent": body.intent.value if body.intent else None,
         "persona": body.persona.value if body.persona else None,
         "topic_cluster": body.topic_cluster,
@@ -455,7 +455,7 @@ def create_prompts_bulk(
     rows = [
         {
             "workspace_id": workspace["id"],
-            "prompt_text": p.prompt_text,
+            "prompt_text": p.prompt_text.strip().lower(),
             "intent": p.intent.value if p.intent else None,
             "persona": p.persona.value if p.persona else None,
             "topic_cluster": p.topic_cluster,

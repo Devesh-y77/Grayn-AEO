@@ -732,7 +732,7 @@ async def handle_call_tool(
             for q in suggested_queries:
                 p_insert = db.table("aeo_prompts").upsert({
                     "workspace_id": workspace_id,
-                    "prompt_text": q,
+                    "prompt_text": q.strip().lower(),
                     "intent": "live_scan"
                 }, on_conflict="workspace_id, prompt_text")
                 p_resp = await asyncio.to_thread(p_insert.execute)
