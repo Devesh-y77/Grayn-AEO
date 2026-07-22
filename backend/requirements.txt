@@ -102,3 +102,5 @@ watchfiles==1.2.0
 websockets==12.0
 
 tenacity==8.3.0
+
+rapidfuzz
