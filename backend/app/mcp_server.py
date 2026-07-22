@@ -1,3 +1,4 @@
+import asyncio
 """
 Grayn AEO — MCP Server
 
@@ -662,7 +663,6 @@ async def handle_call_tool(
             from app.services.discovery import run_discovery
             from app.services.providers.base import get_provider, EngineType
             from app.services.judge import extract_mentions_and_citations
-            import asyncio
             import uuid
             
             force_rediscovery = args.get("force_rediscovery", False)
@@ -725,7 +725,6 @@ async def handle_call_tool(
                         ext = await extract_mentions_and_citations(res.raw_text, brand_name, skip_citations=has_native)
                         ext.citations = reconcile_citations(res, ext.citations, f"mcp_scan_{scan_group_id}")
                     except Exception as je:
-                        import asyncio
                         judge_error_msg = "Timeout" if isinstance(je, (asyncio.TimeoutError, TimeoutError)) else str(je)
                         r_insert = db.table("aeo_runs").insert({
                             "workspace_id": workspace_id,
@@ -816,7 +815,6 @@ async def handle_call_tool(
                         "scan_group_id": scan_group_id
                     }
                 except Exception as e:
-                    import asyncio
                     error_msg = "Timeout" if isinstance(e, (asyncio.TimeoutError, TimeoutError)) else str(e)
                     r_insert = db.table("aeo_runs").insert({
                         "workspace_id": workspace_id,

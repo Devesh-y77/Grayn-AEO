@@ -1,3 +1,4 @@
+import asyncio
 """
 Grayn AEO — Tracking Engine
 
@@ -43,7 +44,6 @@ async def run_single_prompt(
     prompt_id = prompt["id"]
 
     # ── Idempotency check (TR-07) ────────────────────────
-    import asyncio
     
     query = (
         db.table("aeo_runs")
@@ -223,7 +223,6 @@ async def trigger_batch_run(
     if prompt_ids:
         query = query.in_("id", prompt_ids)
 
-    import asyncio
     prompts_query = query
     prompts_resp = await asyncio.to_thread(prompts_query.execute)
     prompts = prompts_resp.data or []
@@ -232,7 +231,6 @@ async def trigger_batch_run(
 
     results = {"completed": 0, "skipped": 0, "failed": 0, "total_cost": 0.0}
 
-    import asyncio
     semaphore = asyncio.Semaphore(10)
 
     async def _bounded_run(prompt, engine):
