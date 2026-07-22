@@ -768,6 +768,7 @@ async def handle_call_tool(
                             mentions_to_insert.append({
                                 "workspace_id": workspace_id,
                                 "run_id": run_id,
+                                "raw_name": m_name,
                                 "brand_name": canonical_m,
                                 "brand_id": b_id,
                                 "is_target_brand": is_target,
@@ -785,7 +786,7 @@ async def handle_call_tool(
                                     "run_id": run_id,
                                     "url": c.url,
                                     "domain": c.domain,
-                                    "source": "native" if c.is_native else "judge"
+                                    "source": c.source or "judge_extracted"
                                 })
                         if citations_to_insert:
                             c_insert = db.table("aeo_citations").insert(citations_to_insert)
