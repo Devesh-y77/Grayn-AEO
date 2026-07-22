@@ -989,14 +989,23 @@ async def handle_sse(request: Request):
     """MCP SSE endpoint."""
     from app.config import get_settings
     settings = get_settings()
-    if not settings.MCP_AUTH_TOKEN:
-        raise HTTPException(status_code=500, detail="Server misconfiguration: MCP_AUTH_TOKEN not set")
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid Authorization header")
     import secrets
-    if not secrets.compare_digest(auth_header.split("Bearer ")[1], settings.MCP_AUTH_TOKEN):
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP Auth Token")
+    
+    # Allow either X-API-Key (Slack bot) or Authorization: Bearer (Lovable)
+    is_authorized = False
+    
+    api_key = request.headers.get("X-API-Key")
+    if api_key and settings.MCP_API_KEY and secrets.compare_digest(api_key, settings.MCP_API_KEY):
+        is_authorized = True
+        
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split("Bearer ")[1]
+        if settings.MCP_AUTH_TOKEN and secrets.compare_digest(token, settings.MCP_AUTH_TOKEN):
+            is_authorized = True
+            
+    if not is_authorized:
+        raise HTTPException(status_code=401, detail="Unauthorized")
             
     async with sse.connect_sse(
         request.scope, request.receive, request._send
@@ -1010,13 +1019,21 @@ async def handle_messages(request: Request):
     """MCP POST messages endpoint."""
     from app.config import get_settings
     settings = get_settings()
-    if not settings.MCP_AUTH_TOKEN:
-        raise HTTPException(status_code=500, detail="Server misconfiguration: MCP_AUTH_TOKEN not set")
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized: Missing or invalid Authorization header")
     import secrets
-    if not secrets.compare_digest(auth_header.split("Bearer ")[1], settings.MCP_AUTH_TOKEN):
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP Auth Token")
+    
+    is_authorized = False
+    
+    api_key = request.headers.get("X-API-Key")
+    if api_key and settings.MCP_API_KEY and secrets.compare_digest(api_key, settings.MCP_API_KEY):
+        is_authorized = True
+        
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split("Bearer ")[1]
+        if settings.MCP_AUTH_TOKEN and secrets.compare_digest(token, settings.MCP_AUTH_TOKEN):
+            is_authorized = True
+            
+    if not is_authorized:
+        raise HTTPException(status_code=401, detail="Unauthorized")
             
     await sse.handle_post_message(request.scope, request.receive, request._send)

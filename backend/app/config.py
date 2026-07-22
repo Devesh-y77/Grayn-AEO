@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     
     # ── MCP & External Services ───────────────────────────
     MCP_AUTH_TOKEN: str = ""
+    MCP_API_KEY: str = ""
     GRAYN_AEO_API_KEY: str = ""
 
     # ── AI Providers ──────────────────────────────────────
