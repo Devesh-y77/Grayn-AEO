@@ -617,6 +617,9 @@ async def handle_call_tool(
             if not citations:
                 return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
                 
+            comp = db.table("aeo_mentions").select("brand_name").eq("workspace_id", workspace_id).eq("is_target_brand", False).execute().data or []
+            import re
+            comp_slugs = set(re.sub(r'[^a-z0-9]', '', c["brand_name"].lower()) for c in comp if c.get("brand_name"))
 
             domain_counts = Counter()
             url_counts = Counter()
@@ -625,6 +628,8 @@ async def handle_call_tool(
                 d = c.get("domain")
                 u = c.get("url")
                 if d and d != "unknown":
+                    if any(slug in d.lower() for slug in comp_slugs if len(slug) > 2):
+                        continue
                     domain_counts[d] += 1
                 if u:
                     url_counts[u] += 1
@@ -632,7 +637,8 @@ async def handle_call_tool(
             top_domains = domain_counts.most_common(10)
             top_urls = url_counts.most_common(10)
             
-            md = "**🏆 Top Domains Citing Your Brand**\n"
+            target_brand_name = workspace_data.get("brand_name", "your brand")
+            md = f"**🏆 Sources AI cites when recommending {target_brand_name}**\n"
             for d, count in top_domains:
                 md += f"• {d} ({count} citations)\n"
                 
