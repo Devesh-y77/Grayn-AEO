@@ -151,7 +151,14 @@ async def run_single_prompt(
         mentions_to_insert = []
         for m in extraction.mentions:
             m_lower = m.brand_name.lower()
-            is_target = m.is_target_brand or target_lower in m_lower or any(a in m_lower for a in aliases)
+            is_target = (
+                m.is_target_brand
+                or target_lower in m_lower
+                or m_lower in target_lower
+                or m_lower.startswith(target_lower)
+                or target_lower.startswith(m_lower)
+                or any(a in m_lower for a in aliases)
+            )
             
             canonical_m, brand_id = await normalize(m.brand_name, workspace_id, db)
             

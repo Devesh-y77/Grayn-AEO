@@ -813,11 +813,15 @@ async def handle_call_tool(
                             canonical_m, b_id = await normalize(m_name, str(workspace_id), db)
                             canonical_b, _ = await normalize(brand_name, str(workspace_id), db)
                             
-                            is_target = m.is_target_brand
-                            if is_target and canonical_b != canonical_m:
-                                is_target = False
-                            if not is_target and canonical_b == canonical_m:
-                                is_target = True
+                            target_lower = canonical_b.lower()
+                            m_lower = canonical_m.lower()
+                            is_target = (
+                                m.is_target_brand
+                                or target_lower in m_lower
+                                or m_lower in target_lower
+                                or m_lower.startswith(target_lower)
+                                or target_lower.startswith(m_lower)
+                            )
                                 
                             mentions_to_insert.append({
                                 "workspace_id": workspace_id,
