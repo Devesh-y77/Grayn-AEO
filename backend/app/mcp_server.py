@@ -96,20 +96,8 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["client_name"]
             }
         ),
-        types.Tool(
-            name="get_recommendations",
-            description="Get AI-generated SEO/AEO recommendations to improve brand visibility. Use for: e.g., 'how can I improve', 'give me recommendations'.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "client_name": {
-                        "type": "string",
-                        "description": "REQUIRED. The brand name or domain. The agent must always pass this."
-                    }
-                },
-                "required": ["client_name"]
-            }
-        ),
+        # TODO: implement get_recommendations (currently queries non-existent
+        # table — removed from tool list until implemented)
         types.Tool(
             name="trigger_aeo_analysis",
             description="Run a live AEO analysis by dynamically discovering queries for a URL and checking AI engine visibility. Use for: e.g., 'run a live scan for netflix.com', 'trigger analysis'.",
@@ -775,8 +763,10 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=md.strip())]
             
         elif name == "get_recommendations":
-            recs = (await asyncio.to_thread(lambda: db.table("aeo_recommendations").select("content, engine, status").eq("workspace_id", workspace_id).execute())).data
-            return [types.TextContent(type="text", text=json.dumps(recs, indent=2))]
+            # Not implemented — queries a table that doesn't exist in the
+            # production schema. Removed from handle_list_tools; this guard
+            # is only for a direct call bypassing the tool list.
+            return [types.TextContent(type="text", text=json.dumps({"error": "Recommendations aren't available yet. Try asking for a rival analysis or content gaps instead."}))]
             
         elif name == "trigger_aeo_analysis":
             args = arguments or {}
