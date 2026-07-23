@@ -45,7 +45,13 @@ CREATE TABLE aeo_prompts (
     embedding VECTOR(1536),
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
-    UNIQUE(workspace_id, prompt_text)
+    -- One workspace = one account, but an account can scan many different
+    -- brands over time. brand_name/domain tag which brand this specific scan
+    -- batch belongs to, so reads can resolve "the most recently scanned brand"
+    -- instead of assuming workspaces.brand_name is a single fixed identity.
+    brand_name TEXT,
+    domain TEXT,
+    UNIQUE(workspace_id, brand_name, prompt_text)
 );
 
 -- 4. Competitors
