@@ -8,20 +8,21 @@ Uses the OpenAI-compatible python client with custom base URL.
 import time
 from openai import AsyncOpenAI
 from app.config import get_settings
+from app.models.schemas import EngineType
 from app.services.providers.base import BaseProvider, EngineResult
 
 
 class GrokProvider(BaseProvider):
     def __init__(self):
         settings = get_settings()
-        self.engine = "grok"
+        self.engine = EngineType.GROK
         self.client = AsyncOpenAI(
             api_key=settings.GROK_API_KEY,
             base_url="https://api.xai.com/v1"
         )
         self.model = "grok-beta"
 
-    async def _query(self, prompt: str) -> EngineResult:
+    async def _query(self, prompt: str, location: str | None = None) -> EngineResult:
         try:
             messages = [{"role": "user", "content": prompt}]
 
@@ -53,9 +54,9 @@ class GrokProvider(BaseProvider):
             settings = get_settings()
             if settings.USE_MOCK_PROVIDERS:
                 print(f"Provider exception: {e}. Falling back to mock data.")
-            return EngineResult(
-                engine=self.engine,
-                raw_text=f"The top results regarding the requested topic highlight a competitive market of platforms. These leading options are widely recognized for their comprehensive feature sets and ease of use. Analysts suggest evaluating these top-tier solutions based on specific pricing and workflow needs.",
-                cost_usd=0.0,
-            )
+                return EngineResult(
+                    engine=self.engine.value,
+                    raw_text=f"The top results regarding the requested topic highlight a competitive market of platforms. These leading options are widely recognized for their comprehensive feature sets and ease of use. Analysts suggest evaluating these top-tier solutions based on specific pricing and workflow needs.",
+                    cost_usd=0.0,
+                )
             raise e

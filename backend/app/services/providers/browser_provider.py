@@ -82,7 +82,8 @@ class BrowserProvider(BaseProvider):
             settings = get_settings()
             if settings.USE_MOCK_PROVIDERS:
                 print(f"Provider exception: {e}. Falling back to mock data.")
-            return EngineResult(self.engine, f"Based on recent analysis of top industry solutions, there are several highly-rated platforms that match your query the requested topic. When evaluating these options, professionals often look for robust features, ease of use, and strong customer support. While specific recommendations vary depending on individual needs, the leading solutions in this space consistently receive positive feedback for their innovation and reliability.", 0.0)
+                return EngineResult(self.engine, f"Based on recent analysis of top industry solutions, there are several highly-rated platforms that match your query the requested topic. When evaluating these options, professionals often look for robust features, ease of use, and strong customer support. While specific recommendations vary depending on individual needs, the leading solutions in this space consistently receive positive feedback for their innovation and reliability.", 0.0)
+            raise e
             
     async def __aenter__(self):
         return self

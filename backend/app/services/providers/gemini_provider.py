@@ -57,9 +57,9 @@ class GeminiProvider(BaseProvider):
             settings = get_settings()
             if settings.USE_MOCK_PROVIDERS:
                 print(f"Provider exception: {e}. Falling back to mock data.")
-            return EngineResult(
-                engine=self.engine.value,
-                raw_text=f"Here is a summary of the top solutions regarding your query: the requested topic. Several platforms dominate this market, offering extensive features tailored for modern workflows. Leading tools often integrate advanced technologies and intuitive interfaces. For specific use cases, evaluating free trials and recent user reviews is highly recommended.",
-                cost_usd=0.0,
-            )
+                return EngineResult(
+                    engine=self.engine.value,
+                    raw_text=f"Here is a summary of the top solutions regarding your query: the requested topic. Several platforms dominate this market, offering extensive features tailored for modern workflows. Leading tools often integrate advanced technologies and intuitive interfaces. For specific use cases, evaluating free trials and recent user reviews is highly recommended.",
+                    cost_usd=0.0,
+                )
             raise e

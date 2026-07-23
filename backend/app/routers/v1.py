@@ -1001,13 +1001,21 @@ async def onboard_workspace(
     # In OpenLens style, they enter a URL directly. 
     # Let's mint a new workspace regardless.
     
+    import logging
+    logger = logging.getLogger(__name__)
+
     brand_name = body.competitors[0].brand_name if body.competitors else "Unknown Brand"
     domain = body.competitors[0].domain if body.competitors else ""
-    
-    # We will just overwrite the current workspace for simplicity in this demo,
-    # or better, clear existing data for this workspace and insert the new stuff.
+
     ws_id = workspace["id"]
-    
+
+    # Only a genuinely new workspace (no brand set yet, no prompts tracked
+    # yet) gets a clean-slate delete-and-recreate. Re-onboarding an existing
+    # workspace must be additive — see Issue 7 (this used to wipe all
+    # existing competitors/clusters/prompts on every re-onboard).
+    existing_prompts = db.table("aeo_prompts").select("id").eq("workspace_id", ws_id).limit(1).execute()
+    is_existing_workspace = bool(workspace.get("brand_name")) and bool(existing_prompts.data)
+
     # Update Workspace
     update_data = {
         "brand_name": brand_name,
@@ -1016,43 +1024,64 @@ async def onboard_workspace(
     }
     if body.target_location:
         update_data["target_location"] = body.target_location
-        
+
     db.table("workspaces").update(update_data).eq("id", ws_id).execute()
 
-    # Clear old data (for clean onboarding)
-    db.table("aeo_competitors").delete().eq("workspace_id", ws_id).execute()
-    db.table("aeo_clusters").delete().eq("workspace_id", ws_id).execute()
-    db.table("aeo_prompts").delete().eq("workspace_id", ws_id).execute()
+    if is_existing_workspace:
+        logger.info("Workspace %s already exists, merging data", ws_id)
+    else:
+        logger.info("Creating new workspace %s", ws_id)
+        db.table("aeo_competitors").delete().eq("workspace_id", ws_id).execute()
+        db.table("aeo_clusters").delete().eq("workspace_id", ws_id).execute()
+        db.table("aeo_prompts").delete().eq("workspace_id", ws_id).execute()
 
-    # Insert new Competitors
+    # Insert new Competitors — additive: skip ones that already exist by name.
+    # (aeo_competitors has no unique constraint to upsert against, so we
+    # dedupe in application code instead.)
     if body.competitors:
         # Skip the first one as it is the brand itself (usually)
         comps = body.competitors[1:]
         if comps:
-            db.table("aeo_competitors").insert([
-                {"workspace_id": ws_id, "brand_name": c.brand_name, "domain": c.domain, "aliases": c.aliases}
-                for c in comps
-            ]).execute()
-            
-    # Insert Themes as Clusters
-    themes = list(set(["General Industry"] * len(body.queries))) # Mocking themes if needed, or we can just use "General"
-    db.table("aeo_clusters").insert({
-        "workspace_id": ws_id,
-        "cluster_name": "Discovery Queries"
-    }).execute()
+            existing_comp_names = set()
+            if is_existing_workspace:
+                existing_comps = db.table("aeo_competitors").select("brand_name").eq("workspace_id", ws_id).execute()
+                existing_comp_names = {(c["brand_name"] or "").lower() for c in (existing_comps.data or [])}
+            new_comps = [c for c in comps if c.brand_name.lower() not in existing_comp_names]
+            if new_comps:
+                db.table("aeo_competitors").insert([
+                    {"workspace_id": ws_id, "brand_name": c.brand_name, "domain": c.domain, "aliases": c.aliases}
+                    for c in new_comps
+                ]).execute()
 
-    # Insert Prompts
+    # Insert Themes as Clusters — additive: only create if not already present
+    # (aeo_clusters has no unique constraint either).
+    existing_cluster = (
+        db.table("aeo_clusters")
+        .select("id")
+        .eq("workspace_id", ws_id)
+        .eq("cluster_name", "Discovery Queries")
+        .limit(1)
+        .execute()
+    )
+    if not existing_cluster.data:
+        db.table("aeo_clusters").insert({
+            "workspace_id": ws_id,
+            "cluster_name": "Discovery Queries"
+        }).execute()
+
+    # Insert Prompts — additive: upsert on the real (workspace_id, prompt_text)
+    # unique constraint, normalized per the codebase's .strip().lower() rule.
     if body.queries:
-        db.table("aeo_prompts").insert([
+        db.table("aeo_prompts").upsert([
             {
-                "workspace_id": ws_id, 
-                "prompt_text": q.text, 
+                "workspace_id": ws_id,
+                "prompt_text": q.text.strip().lower(),
                 "topic_cluster": "Discovery Queries",
                 "attributes": q.attributes
             }
             for q in body.queries
-        ]).execute()
-        
+        ], on_conflict="workspace_id, prompt_text").execute()
+
     # Get all prompt IDs
     prompt_ids = [p["id"] for p in db.table("aeo_prompts").select("id").eq("workspace_id", ws_id).execute().data]
 

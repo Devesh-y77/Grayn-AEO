@@ -93,10 +93,14 @@ async def run_single_prompt(
 
     # ── Run the judge ────────────────────────────────────
     try:
-        from app.services.citations import reconcile_citations
+        from app.services.citations import reconcile_citations, is_valid_url
         target_brand = workspace.get("brand_name", "TargetBrand")
         brand_aliases = workspace.get("aliases", [])
-        has_native = bool(result.native_citations)
+        # Only skip judge citation extraction if native citations are actually
+        # valid — not merely present (Issue 12: otherwise a run with all-invalid
+        # native URLs ends up with zero citations, since the judge was never
+        # asked to extract any as a fallback).
+        has_native = any(is_valid_url(c.get("url", "")) for c in (result.native_citations or []))
         extraction = await extract_mentions_and_citations(
             answer_text=result.raw_text,
             target_brand=target_brand,

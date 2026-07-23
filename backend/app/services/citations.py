@@ -33,12 +33,14 @@ def reconcile_citations(engine_result: EngineResult, judge_citations: List[Citat
     """
     if engine_result.native_citations:
         final_citations = []
+        invalid_urls = []
         for c in engine_result.native_citations:
             url = c.get("url")
             if not url or not is_valid_url(url):
+                invalid_urls.append(url)
                 logger.warning(f"Dropping invalid native citation URL for run {run_id}: {url}")
                 continue
-            
+
             domain = extract_domain(url)
             final_citations.append(
                 CitationData(
@@ -48,8 +50,20 @@ def reconcile_citations(engine_result: EngineResult, judge_citations: List[Citat
                     source="native"
                 )
             )
-        return final_citations
-    
+
+        if final_citations:
+            return final_citations
+
+        # All native citations were invalid — fall back to judge-extracted
+        # citations rather than silently returning zero citations for this
+        # run (Issue 12). Note: callers should avoid skipping judge citation
+        # extraction in the first place unless native citations are known to
+        # be valid — see the has_native checks in tracking.py / mcp_server.py.
+        logger.warning(
+            f"All {len(invalid_urls)} native citations were invalid for run {run_id} "
+            f"(dropped: {invalid_urls}); falling back to judge-extracted citations."
+        )
+
     # Fallback to judge extracted citations
     valid_judge_citations = []
     for c in judge_citations:
