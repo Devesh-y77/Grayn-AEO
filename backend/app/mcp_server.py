@@ -741,46 +741,69 @@ async def handle_call_tool(
             import uuid
             
             force_rediscovery = args.get("force_rediscovery", False)
-            brand_name = workspace_data.get("brand_name")
-            ws_domain = workspace_data.get("domain") or ""
             suggested_queries = []
-            
-            # Only use cache if the domain matches — prevents stale queries from another brand
+            brand_name = None
+
+            # One workspace = one account, which can scan many different
+            # brands over time — brand identity lives on aeo_prompts, not on
+            # the workspace row. Only reuse cached prompts that belong to
+            # THIS exact domain, never another brand previously scanned
+            # under the same account (see the brand-isolation redesign).
             from urllib.parse import urlparse as _urlparse
             _parsed_url = _urlparse(url if "://" in url else "https://" + url)
             _url_domain = _parsed_url.netloc.replace("www.", "").lower()
-            domain_matches = ws_domain and (_url_domain in ws_domain or ws_domain in _url_domain)
-            
-            if brand_name and domain_matches and not force_rediscovery:
-                cached_prompts = await asyncio.to_thread(lambda: db.table("aeo_prompts").select("prompt_text").eq("workspace_id", workspace_id).eq("intent", "live_scan").limit(queries_count).execute())
-                if cached_prompts.data and len(cached_prompts.data) > 0:
+
+            if not force_rediscovery:
+                cached_prompts = await asyncio.to_thread(
+                    lambda: db.table("aeo_prompts")
+                    .select("prompt_text, brand_name")
+                    .eq("workspace_id", workspace_id)
+                    .eq("intent", "live_scan")
+                    .eq("domain", _url_domain)
+                    .limit(queries_count)
+                    .execute()
+                )
+                if cached_prompts.data:
                     suggested_queries = [p["prompt_text"] for p in cached_prompts.data]
-            
+                    brand_name = cached_prompts.data[0]["brand_name"]
+
             if not suggested_queries:
                 discovery = await run_discovery(url, num_queries=queries_count)
                 brand_name = discovery.get("brand_name", url)
-                
-                try:
-                    await asyncio.to_thread(lambda: db.table("workspaces").update({"brand_name": brand_name, "domain": _url_domain}).eq("id", workspace_id).execute())
-                except Exception:
-                    pass
-                    
+
+                # NOTE: workspaces.brand_name/domain are intentionally never
+                # written here anymore — the workspace row is the account
+                # container, not a single brand's identity. Overwriting it
+                # on every scan previously relabeled other brands' data
+                # (e.g. an existing "Flipkart" workspace silently became
+                # "WonJo Kids" after a later scan for a different domain).
+
                 suggested_queries = [q["text"] for q in discovery.get("suggested_queries", [])]
-                # Clear stale prompts for this workspace before inserting fresh ones
+                # Clear stale prompts for THIS brand/domain only — never
+                # touch other brands tracked under the same workspace.
                 try:
-                    await asyncio.to_thread(lambda: db.table("aeo_prompts").delete().eq("workspace_id", workspace_id).eq("intent", "live_scan").execute())
+                    await asyncio.to_thread(
+                        lambda: db.table("aeo_prompts")
+                        .delete()
+                        .eq("workspace_id", workspace_id)
+                        .eq("intent", "live_scan")
+                        .eq("domain", _url_domain)
+                        .execute()
+                    )
                 except Exception:
                     pass
-                
+
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]:02d}"
-            
+
             prompts_cache = {}
             for q in suggested_queries:
                 p_insert = db.table("aeo_prompts").upsert({
                     "workspace_id": workspace_id,
                     "prompt_text": q.strip().lower(),
-                    "intent": "live_scan"
-                }, on_conflict="workspace_id, prompt_text")
+                    "intent": "live_scan",
+                    "brand_name": brand_name,
+                    "domain": _url_domain,
+                }, on_conflict="workspace_id, brand_name, prompt_text")
                 p_resp = await asyncio.to_thread(p_insert.execute)
                 prompts_cache[q] = p_resp.data[0]["id"]
             
