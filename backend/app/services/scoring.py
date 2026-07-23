@@ -95,9 +95,15 @@ def _resolve_week(db: Client, workspace_id: str, iso_week: str | None) -> str:
 
 
 def compute_visibility(
-    db: Client, workspace_id: str, iso_week: str | None = None
+    db: Client, workspace_id: str, iso_week: str | None = None, prompt_ids: list[str] | None = None
 ) -> VisibilityScore:
-    """SC-01/02/03: Visibility %, delta, per-engine split."""
+    """SC-01/02/03: Visibility %, delta, per-engine split.
+
+    prompt_ids, when given, scopes runs to a single brand's prompts —
+    one workspace can track many brands over time (see the brand-isolation
+    redesign), so callers resolving a specific brand must pass its prompt
+    ids here to avoid blending another brand's runs into the score.
+    """
     week = _resolve_week(db, workspace_id, iso_week)
 
     # Derive previous week from resolved week
@@ -106,16 +112,22 @@ def compute_visibility(
     d = _date.fromisocalendar(year, week_num, 1) - timedelta(days=7)
     prev_week = f"{d.isocalendar()[0]}-W{d.isocalendar()[1]:02d}"
 
-    # Get all runs for this week
-    runs = (
-        db.table("aeo_runs")
-        .select("id, engine, scan_group_id, status")
-        .eq("workspace_id", workspace_id)
-        .eq("iso_week", week)
-        .execute()
-        .data
-        or []
-    )
+    # Get all runs for this week (brand-scoped via prompt_ids when given)
+    if prompt_ids is not None:
+        runs = chunked_in_fetch(
+            db, "aeo_runs", "id, engine, scan_group_id, status", workspace_id,
+            "prompt_id", prompt_ids, extra_filters={"iso_week": week},
+        )
+    else:
+        runs = (
+            db.table("aeo_runs")
+            .select("id, engine, scan_group_id, status")
+            .eq("workspace_id", workspace_id)
+            .eq("iso_week", week)
+            .execute()
+            .data
+            or []
+        )
 
     if not runs:
         return VisibilityScore(
@@ -160,17 +172,23 @@ def compute_visibility(
             engine_confidences[eng] = 100
 
 
-    # Week-over-week delta
+    # Week-over-week delta (same brand scoping as the current-week query above)
     delta = None
-    prev_runs = (
-        db.table("aeo_runs")
-        .select("id, engine, scan_group_id, status")
-        .eq("workspace_id", workspace_id)
-        .eq("iso_week", prev_week)
-        .execute()
-        .data
-        or []
-    )
+    if prompt_ids is not None:
+        prev_runs = chunked_in_fetch(
+            db, "aeo_runs", "id, engine, scan_group_id, status", workspace_id,
+            "prompt_id", prompt_ids, extra_filters={"iso_week": prev_week},
+        )
+    else:
+        prev_runs = (
+            db.table("aeo_runs")
+            .select("id, engine, scan_group_id, status")
+            .eq("workspace_id", workspace_id)
+            .eq("iso_week", prev_week)
+            .execute()
+            .data
+            or []
+        )
     if prev_runs:
         prev_run_ids = [r["id"] for r in prev_runs]
         prev_mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", prev_run_ids, extra_filters={"is_target_brand": True})

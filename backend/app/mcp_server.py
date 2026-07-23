@@ -210,13 +210,72 @@ async def handle_list_tools() -> list[types.Tool]:
         )
     ]
 
+async def resolve_active_brand(db, workspace_id, client_name_hint=None):
+    """
+    Resolve which brand's data a read tool should show for this workspace.
+
+    One workspace = one account, but an account can scan many different
+    brands over time (Nike, Flipkart, WonJo Kids, ...) — brand identity
+    lives on aeo_prompts.brand_name, not on the workspace row. Resolution
+    order:
+      1. client_name_hint, if it matches a brand previously scanned here
+      2. the most recently scanned brand for this workspace
+      3. workspaces.brand_name/domain, but ONLY if nothing has ever been
+         scanned here yet (aeo_prompts is completely empty)
+
+    Returns (brand_name, domain, prompt_ids) — prompt_ids is the full set
+    of aeo_prompts.id belonging to the resolved brand, for callers to scope
+    every downstream aeo_runs/aeo_mentions/aeo_citations query with, so one
+    brand's data never blends into another's response.
+    """
+    rows = (
+        await asyncio.to_thread(
+            lambda: db.table("aeo_prompts")
+            .select("id, brand_name, domain, created_at")
+            .eq("workspace_id", workspace_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+    ).data or []
+
+    if not rows:
+        ws_res = await asyncio.to_thread(
+            lambda: db.table("workspaces").select("brand_name, domain").eq("id", workspace_id).execute()
+        )
+        ws = (ws_res.data or [{}])[0]
+        return ws.get("brand_name"), ws.get("domain"), []
+
+    chosen_brand = None
+    if client_name_hint:
+        c_lower = client_name_hint.lower().strip()
+        for r in rows:
+            if (r.get("brand_name") or "").lower().strip() == c_lower:
+                chosen_brand = r["brand_name"]
+                break
+        if not chosen_brand:
+            for r in rows:
+                b = (r.get("brand_name") or "").lower()
+                if b and (c_lower in b or b in c_lower):
+                    chosen_brand = r["brand_name"]
+                    break
+
+    if not chosen_brand:
+        # No hint, or it didn't match anything scanned here — default to
+        # the most recently scanned brand (rows is already ordered desc).
+        chosen_brand = rows[0]["brand_name"]
+
+    brand_domain = next((r["domain"] for r in rows if r["brand_name"] == chosen_brand), None)
+    prompt_ids = [r["id"] for r in rows if r["brand_name"] == chosen_brand]
+    return chosen_brand, brand_domain, prompt_ids
+
+
 @server.call_tool()
 async def handle_call_tool(
     name: str, arguments: dict[str, Any] | None
 ) -> list[types.TextContent]:
     """Execute AEO tool."""
     from app.database import get_supabase
-    
+
     db = get_supabase()
     # Frontend injects client_name, target_brand, brand, url, domain, workspace_ref
     client_name = (arguments.get("client_name") or arguments.get("target_brand") or arguments.get("brand")) if arguments else None
@@ -295,10 +354,18 @@ async def handle_call_tool(
         return [types.TextContent(type="text", text="I need to know which brand or website you're asking about before I can look this up — please specify the brand name or URL.")]
     
     workspace_id = workspace_data["id"]
+
+    # Resolve which brand's data this call should see (see resolve_active_brand
+    # docstring — one workspace can hold many brands' scans). trigger_aeo_analysis
+    # resolves its own brand from the scanned URL instead and doesn't use this.
+    active_brand_name, active_brand_domain, active_prompt_ids = await resolve_active_brand(
+        db, workspace_id, client_name_hint=client_name
+    )
+
     try:
         if name == "get_visibility_report":
             from app.services.scoring import compute_visibility
-            vis = compute_visibility(db, workspace_id)
+            vis = compute_visibility(db, workspace_id, prompt_ids=active_prompt_ids)
             
             if not vis.iso_week:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent tracking scans found."}))]
@@ -311,8 +378,8 @@ async def handle_call_tool(
             d = _date.fromisocalendar(year, week_num, 1) - timedelta(days=7)
             prev_week = f"{d.isocalendar()[0]}-W{d.isocalendar()[1]:02d}"
                 
-            prev_vis = compute_visibility(db, workspace_id, prev_week)
-                
+            prev_vis = compute_visibility(db, workspace_id, prev_week, prompt_ids=active_prompt_ids)
+
             if prev_vis and prev_vis.per_engine and vis.per_engine:
                 max_growth = 0
                 max_engine = None
@@ -323,8 +390,8 @@ async def handle_call_tool(
                         max_engine = eng
                 if max_engine and max_growth > 0:
                     highlight = f"{max_engine.title().replace('_', ' ')} jumped +{round(max_growth)} points vs last week."
-                    
-            brand_display = workspace_data.get("brand_name", "").title()
+
+            brand_display = (active_brand_name or "").title()
             if not brand_display:
                 brand_display = "Your Brand"
             
@@ -359,8 +426,11 @@ async def handle_call_tool(
             topic_name = arguments.get("topic_name")
             if not topic_name:
                 return [types.TextContent(type="text", text=json.dumps({"error": "topic_name is required"}))]
-                
-            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, engine, scan_group_id, status, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute())).data
+
+            if not active_prompt_ids:
+                return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
+
+            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, engine, scan_group_id, status, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).limit(200).execute())).data
             if not runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
                 
@@ -428,8 +498,11 @@ async def handle_call_tool(
             competitor_name = arguments.get("competitor_name")
             target_brand_arg = arguments.get("target_brand")
             topic_filter = arguments.get("topic_filter")
-            
-            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, prompt_id, engine, created_at, scan_group_id, status").eq("workspace_id", workspace_id).order("created_at", desc=True).execute())).data
+
+            if not active_prompt_ids:
+                return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand, so I can't analyze competitors yet. Would you like me to run a live visibility scan right now?")]
+
+            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, prompt_id, engine, created_at, scan_group_id, status").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).execute())).data
             if not runs:
                 return [types.TextContent(type="text", text="I don't see any recent tracking scans for your brand, so I can't analyze competitors yet. Would you like me to run a live visibility scan right now?")]
                 
@@ -456,7 +529,7 @@ async def handle_call_tool(
                 
             runs = [r for r in runs if r["id"] in active_run_ids]
             run_ids = [r["id"] for r in runs]
-            prompts = (await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).execute())).data
+            prompts = (await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id, prompt_text").eq("workspace_id", workspace_id).in_("id", active_prompt_ids).execute())).data
             prompt_map = {p["id"]: p["prompt_text"] for p in prompts}
             
             if topic_filter:
@@ -470,8 +543,8 @@ async def handle_call_tool(
             
             # Prevent AI from mistakenly passing the user's own brand or generic query terms as a competitor name
             if competitor_name:
-                ws_brand = (workspace_data.get("brand_name") or "").lower()
-                ws_domain = (workspace_data.get("domain") or "").lower()
+                ws_brand = (active_brand_name or "").lower()
+                ws_domain = (active_brand_domain or "").lower()
                 c_lower = competitor_name.lower().strip()
                 generic_terms = {"ai search", "search", "ai", "all", "competitors", "competitor", "overview", "general", "landscape", "analysis"}
                 if c_lower in generic_terms or (ws_brand and c_lower in ws_brand) or (ws_domain and c_lower in ws_domain) or (ws_domain and ws_domain in c_lower) or (ws_brand and ws_brand in c_lower):
@@ -569,9 +642,14 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "list_workstreams":
+            if not active_prompt_ids:
+                return [types.TextContent(type="text", text="No topics are currently being tracked. Try running a live AEO scan first!")]
+
             # Fetch the most recent runs to get only recently tracked topics
-            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("prompt_id, created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(200).execute())).data
-            
+            # (brand-scoped via active_prompt_ids — otherwise this could show
+            # another brand's topics from the same workspace/account)
+            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("prompt_id, created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).limit(200).execute())).data
+
             if not runs:
                 return [types.TextContent(type="text", text="No topics are currently being tracked. Try running a live AEO scan first!")]
                 
@@ -601,8 +679,11 @@ async def handle_call_tool(
             
             if not topic or not engine:
                 return [types.TextContent(type="text", text=json.dumps({"error": "Both topic and engine are required."}))]
-                
-            prompts = (await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute())).data
+
+            if not active_prompt_ids:
+                return [types.TextContent(type="text", text=json.dumps({"error": f"No tracking data found for topic: {topic}"}))]
+
+            prompts = (await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).in_("id", active_prompt_ids).ilike("prompt_text", f"%{topic}%").limit(1).execute())).data
             if not prompts:
                 return [types.TextContent(type="text", text=json.dumps({"error": f"No tracking data found for topic: {topic}"}))]
                 
@@ -627,29 +708,40 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "get_top_citations":
+            if not active_prompt_ids:
+                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+
+            # Runs belonging to the resolved brand only — every mentions/
+            # citations lookup below is scoped through this, so another
+            # brand tracked under the same workspace never bleeds in.
+            brand_runs = chunked_in_fetch(db, "aeo_runs", "id", workspace_id, "prompt_id", active_prompt_ids)
+            brand_run_ids = [r["id"] for r in brand_runs]
+            if not brand_run_ids:
+                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+
             # Fetch mentions where this brand was cited
-            mentions = (await asyncio.to_thread(lambda: db.table("aeo_mentions").select("run_id").eq("workspace_id", workspace_id).eq("is_target_brand", True).execute())).data
+            mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", brand_run_ids, extra_filters={"is_target_brand": True})
             if not mentions:
                 return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
-                
+
             run_ids = list(set([m["run_id"] for m in mentions]))
-            
+
             # Fetch the runs for these mentions so we can filter by the most recent scan session
             runs = chunked_in_fetch(db, "aeo_runs", "id, created_at", workspace_id, "id", run_ids)
             runs = sorted(runs, key=lambda x: x["created_at"], reverse=True)
             if not runs:
                 return [types.TextContent(type="text", text="*No runs found for citations.*")]
-                
+
             # Filter to only the most recent scan session (within 5 mins of latest run)
             latest_time = datetime.fromisoformat(runs[0]["created_at"].replace('Z', '+00:00'))
             recent_run_ids = [r["id"] for r in runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
-            
+
             # Fetch citations for those recent runs
             citations = chunked_in_fetch(db, "aeo_citations", "url, domain", workspace_id, "run_id", recent_run_ids)
             if not citations:
                 return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
-                
-            comp = (await asyncio.to_thread(lambda: db.table("aeo_mentions").select("brand_name").eq("workspace_id", workspace_id).eq("is_target_brand", False).execute())).data or []
+
+            comp = chunked_in_fetch(db, "aeo_mentions", "brand_name", workspace_id, "run_id", brand_run_ids, extra_filters={"is_target_brand": False})
             import re
             comp_slugs = set(re.sub(r'[^a-z0-9]', '', c["brand_name"].lower()) for c in comp if c.get("brand_name"))
 
@@ -669,7 +761,7 @@ async def handle_call_tool(
             top_domains = domain_counts.most_common(10)
             top_urls = url_counts.most_common(10)
             
-            target_brand_name = workspace_data.get("brand_name", "your brand")
+            target_brand_name = active_brand_name or "your brand"
             md = f"**🏆 Sources AI cites when recommending {target_brand_name}**\n"
             for d, count in top_domains:
                 md += f"• {d} ({count} citations)\n"
@@ -1067,43 +1159,37 @@ async def handle_call_tool(
             # State-memory fallback
             if not topic:
                 topic = LAST_SEARCHED_TOPICS.get(str(workspace_id))
-                if not topic:
+                if not topic and active_prompt_ids:
                     # Robust fallback to database if memory was cleared by server restart
-                    recent = await asyncio.to_thread(lambda: db.table("aeo_runs").select("created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(1).execute())
+                    # (brand-scoped — otherwise this could pick another brand's last topic)
+                    recent = await asyncio.to_thread(lambda: db.table("aeo_runs").select("created_at, aeo_prompts(prompt_text)").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).limit(1).execute())
                     if recent.data and recent.data[0].get("aeo_prompts"):
                         topic = recent.data[0]["aeo_prompts"].get("prompt_text")
-                        
+
                 if not topic:
                     return [types.TextContent(type="text", text="I couldn't determine which topic you want to analyze for content gaps. Could you tell me what specific topic or query you'd like to rank higher for? Alternatively, I can run a fresh live scan first.")]
-                    
+
             urls = []
-            # First try DB
-            prompt_data = await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).ilike("prompt_text", f"%{topic}%").limit(1).execute())
-            if prompt_data.data:
-                prompt_id = prompt_data.data[0]["id"]
-                runs = await asyncio.to_thread(lambda: db.table("aeo_runs").select("id").eq("prompt_id", prompt_id).execute())
-                if runs.data:
-                    run_ids = [r["id"] for r in runs.data]
-                    citations = chunked_in_fetch(db, "aeo_citations", "url", workspace_id, "run_id", run_ids)
-                    urls = list(set([c["url"] for c in citations if c["url"]]))[:10]
-            
+            # First try DB (brand-scoped — never pull another brand's cited URLs)
+            if active_prompt_ids:
+                prompt_data = await asyncio.to_thread(lambda: db.table("aeo_prompts").select("id").eq("workspace_id", workspace_id).in_("id", active_prompt_ids).ilike("prompt_text", f"%{topic}%").limit(1).execute())
+                if prompt_data.data:
+                    prompt_id = prompt_data.data[0]["id"]
+                    runs = await asyncio.to_thread(lambda: db.table("aeo_runs").select("id").eq("prompt_id", prompt_id).execute())
+                    if runs.data:
+                        run_ids = [r["id"] for r in runs.data]
+                        citations = chunked_in_fetch(db, "aeo_citations", "url", workspace_id, "run_id", run_ids)
+                        urls = list(set([c["url"] for c in citations if c["url"]]))[:10]
+
             # Fallback to live cache if not in DB
             if not urls and topic == LAST_SEARCHED_TOPICS.get(str(workspace_id)):
                 urls = LAST_SEARCHED_CITATIONS.get(str(workspace_id), [])
-                
+
             if not urls:
                 return [types.TextContent(type="text", text=f"No competitor URLs have been cited for this topic yet.")]
-            
-            ws_data = await asyncio.to_thread(lambda: db.table("workspaces").select("brand_name").eq("id", workspace_id).execute())
-            brand = ws_data.data[0]["brand_name"] if ws_data.data and ws_data.data[0].get("brand_name") else None
-            
-            if not brand:
-                target_mention = await asyncio.to_thread(lambda: db.table("aeo_mentions").select("brand_name").eq("workspace_id", workspace_id).eq("is_target_brand", True).limit(1).execute())
-                if target_mention.data:
-                    brand = target_mention.data[0]["brand_name"]
-                else:
-                    brand = "Your Brand"
-            
+
+            brand = active_brand_name or "Your Brand"
+
             from app.services.content_analyzer import analyze_content_gaps
             strategy = await analyze_content_gaps(urls, topic, brand)
             
