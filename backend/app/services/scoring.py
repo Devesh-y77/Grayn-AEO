@@ -157,7 +157,13 @@ def compute_visibility(
     per_engine = {}
     engine_confidences = {}
     runs_grouped = group_runs_by_scan_group(runs)
-    
+
+    # "Cited in X of Y tracked prompts" framing for the Pulse card — a group
+    # counts as cited using the same >=0.5 consensus threshold as everywhere
+    # else ("won" a topic).
+    mentioned_groups_count = sum(1 for g in runs_grouped.values() if compute_consensus(g, mentioned_run_ids) >= 0.5)
+
+
     for eng, eng_runs in engine_groups.items():
         rate, groups, _ = compute_group_metrics(eng_runs, mentioned_run_ids)
         per_engine[eng] = round((rate / groups) * 100, 1) if groups else 0.0
@@ -203,6 +209,8 @@ def compute_visibility(
         per_engine=per_engine,
         engine_confidences=engine_confidences,
         iso_week=week,
+        mentioned_groups=mentioned_groups_count,
+        total_groups=total_groups,
     )
 
 

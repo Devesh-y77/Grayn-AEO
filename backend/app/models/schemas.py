@@ -251,6 +251,11 @@ class VisibilityScore(BaseModel):
     per_engine: dict = {}
     engine_confidences: dict = {}
     iso_week: str
+    # Optional — populated by compute_visibility for callers (e.g. the MCP
+    # Pulse card) that want a "cited in X of Y tracked prompts" framing
+    # instead of just a percentage. Both None when not computed.
+    mentioned_groups: Optional[int] = None
+    total_groups: Optional[int] = None
 
 
 class ShareOfVoice(BaseModel):
