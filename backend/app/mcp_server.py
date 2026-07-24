@@ -877,6 +877,18 @@ async def handle_call_tool(
 
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]:02d}"
 
+            # Batch the brand lookup ONCE for the whole scan, and normalize
+            # the target brand once up front — both closed over by
+            # run_single below. Previously normalize() was called twice per
+            # mention (once for the mention, once redundantly for the
+            # target brand every single time), each call re-fetching the
+            # entire brands table and serializing through one lock. Across
+            # a scan with hundreds of mentions this caused an 8-minute
+            # production hang. See brand_normalizer.py's performance fix.
+            from app.services.brand_normalizer import normalize, load_brand_cache
+            brand_cache = await load_brand_cache(str(workspace_id), db)
+            canonical_brand_name, _ = await normalize(brand_name, str(workspace_id), db, brand_cache=brand_cache)
+
             prompts_cache = {}
             for q in suggested_queries:
                 p_insert = db.table("aeo_prompts").upsert({
@@ -964,11 +976,9 @@ async def handle_call_tool(
                         mentions_to_insert = []
                         for m in ext.mentions:
                             m_name = m.brand_name or ""
-                            from app.services.brand_normalizer import normalize
-                            canonical_m, b_id = await normalize(m_name, str(workspace_id), db)
-                            canonical_b, _ = await normalize(brand_name, str(workspace_id), db)
-                            
-                            target_lower = canonical_b.lower()
+                            canonical_m, b_id = await normalize(m_name, str(workspace_id), db, brand_cache=brand_cache)
+
+                            target_lower = canonical_brand_name.lower()
                             m_lower = canonical_m.lower()
                             is_target = (
                                 m.is_target_brand
