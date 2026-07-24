@@ -42,11 +42,13 @@ Renderer: `renderPulseCard`
   "summary": "Visibility is up on ChatGPT this week…",  // optional mrkdwn, ≤2900 chars
   "highlight": "ChatGPT jumped +9 points vs last week.",  // NEW, optional — the single standout callout,
                                                             //   previously only baked into `summary`'s text
-  "cited_in": 41,                // NEW, optional int — "cited in X of Y tracked prompts" framing
-  "total_tracked": 120,          // NEW, optional int — paired with cited_in; both present or both absent
+  "cited_in": 41,                // NEW, optional int — how many topic×engine scan groups were cited this week
+  "total_groups": 120,           // NEW, optional int — total scan groups this week; paired with cited_in
+                                  //   (both present or both absent). NOT the same count as footer.total_tracked
+                                  //   below — deliberately different field names so a renderer can't confuse
+                                  //   "scan groups" with "distinct tracked prompts".
   "footer": {                    // NEW, optional
-    "total_tracked": 120,        // count of this brand's tracked prompts (may differ from cited_in's denominator,
-                                  //   which is scoped to the current ISO week)
+    "total_tracked": 18,         // count of this brand's DISTINCT tracked prompts/topics (engine-independent)
     "engine_count": 4,
     "iso_week": "2026-W30"
   },

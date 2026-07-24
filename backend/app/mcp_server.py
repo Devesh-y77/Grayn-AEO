@@ -445,11 +445,16 @@ async def handle_call_tool(
                 "engines": []
             }
 
-            # "Cited in X of Y tracked prompts" — the design's Pulse card
-            # framing, in addition to the plain percentage.
+            # "Cited in X of Y" — the design's Pulse card framing, in addition
+            # to the plain percentage. NOTE: this counts topic x engine scan
+            # groups this week (Y = total_groups), which is NOT the same
+            # number as footer.total_tracked below (distinct tracked
+            # prompts/topics, engine-independent) — deliberately named
+            # differently (total_groups vs total_tracked) so a renderer
+            # never confuses the two.
             if vis.mentioned_groups is not None and vis.total_groups is not None:
                 payload["cited_in"] = vis.mentioned_groups
-                payload["total_tracked"] = vis.total_groups
+                payload["total_groups"] = vis.total_groups
 
             payload["footer"] = {
                 "total_tracked": len(active_prompt_ids),
