@@ -198,6 +198,55 @@ async def handle_list_tools() -> list[types.Tool]:
         )
     ]
 
+async def _generate_topic_gap(topic_text, target_brand, winners, sample_losing_answer):
+    """
+    Best-effort one-line "what's missing" analysis for a Topic card (P3 of
+    the UI-alignment spec). Given a real AI answer that did NOT mention the
+    target brand for this topic, ask a cheap/fast model what specific angle
+    that answer covers which the target brand would need to address to
+    compete.
+
+    Never raises and never blocks the scan on a slow/unavailable model —
+    this is a nice-to-have annotation, not a required field. Returns None
+    on any failure or timeout, in which case callers should simply omit the
+    "gap" field rather than surface an error.
+    """
+    if not sample_losing_answer or not winners:
+        return None
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.deepseek_available:
+            return None
+
+        prompt = (
+            f"Target brand: {target_brand}\n"
+            f"Topic: {topic_text}\n"
+            f"Brands mentioned instead: {', '.join(winners[:3])}\n\n"
+            f"Here is a real AI answer to this query that did NOT mention {target_brand}:\n"
+            f"---\n{sample_losing_answer[:800]}\n---\n\n"
+            f"In one short sentence (under 25 words), what specific angle or "
+            f"content does this answer cover that a page about '{target_brand}' "
+            f"for this topic would need to address to compete? Be concrete, not generic."
+        )
+
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=80,
+            ),
+            timeout=15.0,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        return text or None
+    except Exception:
+        return None
+
+
 async def resolve_active_brand(db, workspace_id, client_name_hint=None):
     """
     Resolve which brand's data a read tool should show for this workspace.
@@ -392,9 +441,22 @@ async def handle_call_tool(
             payload = {
                 "overall_score": int(round(vis.visibility_pct)),
                 "summary": summary_text,
+                "highlight": highlight,
                 "engines": []
             }
-            
+
+            # "Cited in X of Y tracked prompts" — the design's Pulse card
+            # framing, in addition to the plain percentage.
+            if vis.mentioned_groups is not None and vis.total_groups is not None:
+                payload["cited_in"] = vis.mentioned_groups
+                payload["total_tracked"] = vis.total_groups
+
+            payload["footer"] = {
+                "total_tracked": len(active_prompt_ids),
+                "engine_count": len(vis.per_engine),
+                "iso_week": vis.iso_week,
+            }
+
             for eng, pct in vis.per_engine.items():
                 eng_data = {
                     "name": eng.title().replace('_', ' '),
@@ -402,12 +464,12 @@ async def handle_call_tool(
                 }
                 if vis.engine_confidences and eng in vis.engine_confidences:
                     eng_data["confidence"] = vis.engine_confidences[eng]
-                    
+
                 if prev_vis and prev_vis.per_engine and eng in prev_vis.per_engine:
                     eng_data["delta"] = int(round(pct - prev_vis.per_engine[eng]))
-                    
+
                 payload["engines"].append(eng_data)
-                
+
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "analyze_topic":
@@ -418,10 +480,10 @@ async def handle_call_tool(
             if not active_prompt_ids:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
 
-            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, engine, scan_group_id, status, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).limit(200).execute())).data
+            runs = (await asyncio.to_thread(lambda: db.table("aeo_runs").select("id, engine, scan_group_id, status, raw_response, aeo_prompts!inner(prompt_text)").eq("workspace_id", workspace_id).in_("prompt_id", active_prompt_ids).order("created_at", desc=True).limit(200).execute())).data
             if not runs:
                 return [types.TextContent(type="text", text=json.dumps({"error": "No recent runs found"}))]
-                
+
             topic_keywords = topic_name.lower().split()
             topic_runs = [r for r in runs if r.get("aeo_prompts") and all(kw in r["aeo_prompts"].get("prompt_text", "").lower() for kw in topic_keywords)]
             if not topic_runs:
@@ -455,30 +517,47 @@ async def handle_call_tool(
                     engine_runs[eng] = []
                 engine_runs[eng].append(r)
                 
+            sample_losing_answer = None
             for eng, e_runs in engine_runs.items():
                 rate, groups, _ = compute_group_metrics(e_runs, mentioned_run_ids)
+                cited = rate >= 0.5  # Consider it a win if >= 50% of passes cited (standardized, see Issue 10)
                 engines_won.append({
                     "engine": eng.title().replace("_", " "),
-                    "cited": rate >= 0.5  # Consider it a win if >= 50% of passes cited (standardized, see Issue 10)
+                    "cited": cited
                 })
-                
+                if not cited and sample_losing_answer is None:
+                    sample_losing_answer = next((r.get("raw_response") for r in e_runs if r.get("raw_response")), None)
+
             for m in mentions:
                 if not m.get("is_target_brand"):
                     c_name = m.get("brand_name", "Unknown")
                     competitor_tally[c_name] = competitor_tally.get(c_name, 0) + 1
-                
+
             sorted_comps = sorted(competitor_tally.items(), key=lambda x: x[1], reverse=True)
             top_competitors = [c[0] for c in sorted_comps[:3]]
-            
+
             total_rate, total_groups, _ = compute_group_metrics(latest_runs, mentioned_run_ids)
             visibility_pct = int((total_rate / total_groups) * 100) if total_groups else 0
-            
+
+            engines_hit = [e["engine"] for e in engines_won if e["cited"]]
+            engines_missed = [e["engine"] for e in engines_won if not e["cited"]]
+
+            gap = None
+            if engines_missed and sample_losing_answer:
+                gap = await _generate_topic_gap(topic_name, active_brand_name, top_competitors, sample_losing_answer)
+
             payload = {
                 "topic": topic_name,
                 "visibility": visibility_pct,
                 "winners": top_competitors,
-                "engines_hit": [e["engine"] for e in engines_won if e["cited"]],
-                "summary": f"Analyzed on {len(engines_won)} engines."
+                "engines_hit": engines_hit,
+                "engines_missed": engines_missed,
+                "gap": gap,
+                "summary": (
+                    f"Cited by {len(engines_hit)} of {len(engines_won)} engines for this topic."
+                    if engines_hit else
+                    f"Not cited by any of {len(engines_won)} engines checked for this topic."
+                ),
             }
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
@@ -614,7 +693,17 @@ async def handle_call_tool(
                     }
                     
             sorted_topics = sorted(topic_sov_scores.items(), key=lambda x: x[1]["share_of_voice"], reverse=True)
-            
+
+            # Vol/mo per topic, when available. NOTE: aeo_keyword_volumes is
+            # currently empty in production (no keyword-volume provider is
+            # wired up yet) — this returns null for every topic until that
+            # table is populated by some future integration; the lookup
+            # itself is correct and ready for when it is.
+            volume_rows = (await asyncio.to_thread(
+                lambda: db.table("aeo_keyword_volumes").select("keyword, search_volume").eq("workspace_id", workspace_id).execute()
+            )).data or []
+            volume_map = {v["keyword"].lower().strip(): v["search_volume"] for v in volume_rows if v.get("keyword")}
+
             payload = {
                 "competitor": competitor_name.title(),
                 "summary": f"Won {len(topic_sov_scores)} topics. Biggest opportunity: {sorted_topics[0][0]}",
@@ -625,7 +714,8 @@ async def handle_call_tool(
                     "name": topic,
                     "share_of_voice": data["share_of_voice"],
                     "confidence": data["confidence"],
-                    "delta": 0
+                    "delta": 0,
+                    "volume": volume_map.get(topic.lower().strip()),
                 })
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
@@ -696,71 +786,80 @@ async def handle_call_tool(
             return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "get_top_citations":
+            # Redesigned as an outreach-target ranking (Sources card — see
+            # AEO_CARD_CONTRACTS.md): "which authoritative sources are cited
+            # a lot across our tracked topics, and do we already have a
+            # citation there or not" — rather than the old framing, which
+            # only ever showed sources that ALREADY cite us and couldn't
+            # answer "where should we pursue coverage."
             if not active_prompt_ids:
-                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+                return [types.TextContent(type="text", text=json.dumps({"error": "No tracking data found yet for this brand."}))]
 
-            # Runs belonging to the resolved brand only — every mentions/
-            # citations lookup below is scoped through this, so another
-            # brand tracked under the same workspace never bleeds in.
-            brand_runs = chunked_in_fetch(db, "aeo_runs", "id", workspace_id, "prompt_id", active_prompt_ids)
-            brand_run_ids = [r["id"] for r in brand_runs]
-            if not brand_run_ids:
-                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+            # ALL runs for this brand's tracked topics — the full
+            # competitive citation landscape, not just runs that happened
+            # to mention us.
+            brand_runs = chunked_in_fetch(db, "aeo_runs", "id, created_at", workspace_id, "prompt_id", active_prompt_ids)
+            if not brand_runs:
+                return [types.TextContent(type="text", text=json.dumps({"error": "No tracking data found yet for this brand."}))]
+            brand_runs = sorted(brand_runs, key=lambda x: x["created_at"], reverse=True)
 
-            # Fetch mentions where this brand was cited
-            mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", brand_run_ids, extra_filters={"is_target_brand": True})
-            if not mentions:
-                return [types.TextContent(type="text", text="*No citations found because your brand hasn't been mentioned by any AI engines yet!*")]
+            # Scope to the most recent scan session (within 5 min of the latest run)
+            latest_time = datetime.fromisoformat(brand_runs[0]["created_at"].replace('Z', '+00:00'))
+            recent_run_ids = [r["id"] for r in brand_runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
 
-            run_ids = list(set([m["run_id"] for m in mentions]))
+            # Which of these runs actually mentioned the target brand —
+            # used purely to compute the "cites_you" flag per domain below.
+            target_mentions = chunked_in_fetch(db, "aeo_mentions", "run_id", workspace_id, "run_id", recent_run_ids, extra_filters={"is_target_brand": True})
+            target_run_ids = set(m["run_id"] for m in target_mentions)
 
-            # Fetch the runs for these mentions so we can filter by the most recent scan session
-            runs = chunked_in_fetch(db, "aeo_runs", "id, created_at", workspace_id, "id", run_ids)
-            runs = sorted(runs, key=lambda x: x["created_at"], reverse=True)
-            if not runs:
-                return [types.TextContent(type="text", text="*No runs found for citations.*")]
-
-            # Filter to only the most recent scan session (within 5 mins of latest run)
-            latest_time = datetime.fromisoformat(runs[0]["created_at"].replace('Z', '+00:00'))
-            recent_run_ids = [r["id"] for r in runs if (latest_time - datetime.fromisoformat(r["created_at"].replace('Z', '+00:00'))).total_seconds() < 300]
-
-            # Fetch citations for those recent runs
-            citations = chunked_in_fetch(db, "aeo_citations", "url, domain", workspace_id, "run_id", recent_run_ids)
+            citations = chunked_in_fetch(db, "aeo_citations", "url, domain, run_id", workspace_id, "run_id", recent_run_ids)
             if not citations:
-                return [types.TextContent(type="text", text="*No citation URLs found in the latest AI engine responses for your brand.*")]
+                return [types.TextContent(type="text", text=json.dumps({"error": "No citation URLs found in the latest AI engine responses for these topics."}))]
 
-            comp = chunked_in_fetch(db, "aeo_mentions", "brand_name", workspace_id, "run_id", brand_run_ids, extra_filters={"is_target_brand": False})
+            comp = chunked_in_fetch(db, "aeo_mentions", "brand_name", workspace_id, "run_id", recent_run_ids, extra_filters={"is_target_brand": False})
             import re
             comp_slugs = set(re.sub(r'[^a-z0-9]', '', c["brand_name"].lower()) for c in comp if c.get("brand_name"))
 
-            domain_counts = Counter()
-            url_counts = Counter()
-            
+            domain_total = Counter()
+            domain_cites_you = {}
+            total_citation_count = 0
+
             for c in citations:
                 d = c.get("domain")
-                u = c.get("url")
-                if d and d != "unknown":
-                    if any(slug in d.lower() for slug in comp_slugs if len(slug) > 2):
-                        continue
-                    domain_counts[d] += 1
-                if u:
-                    url_counts[u] += 1
-                    
-            top_domains = domain_counts.most_common(10)
-            top_urls = url_counts.most_common(10)
-            
+                if not d or d == "unknown":
+                    continue
+                # Competitor-owned domains aren't real outreach opportunities
+                # (you can't pursue a citation on a rival's own website).
+                if any(slug in d.lower() for slug in comp_slugs if len(slug) > 2):
+                    continue
+                domain_total[d] += 1
+                total_citation_count += 1
+                if c.get("run_id") in target_run_ids:
+                    domain_cites_you[d] = True
+
+            if total_citation_count == 0:
+                return [types.TextContent(type="text", text=json.dumps({"error": "No third-party citation sources found for these topics (only competitor-owned domains were cited)."}))]
+
+            top_domains = domain_total.most_common(10)
+            rows = [
+                {
+                    "domain": d,
+                    "share_of_citations": int(round((count / total_citation_count) * 100)),
+                    "cites_you": bool(domain_cites_you.get(d, False)),
+                }
+                for d, count in top_domains
+            ]
+
+            # Outreach priority: highest-share domains that don't cite us yet.
+            best_roi = [r["domain"] for r in rows if not r["cites_you"]][:3]
+
             target_brand_name = active_brand_name or "your brand"
-            md = f"**🏆 Sources AI cites when recommending {target_brand_name}**\n"
-            for d, count in top_domains:
-                md += f"• {d} ({count} citations)\n"
-                
-            md += "\n**📄 Top Specific URLs**\n"
-            for u, count in top_urls:
-                # Truncate long URLs for readability
-                display_u = u if len(u) < 60 else u[:57] + "..."
-                md += f"• [{display_u}]({u}) ({count} citations)\n"
-                
-            return [types.TextContent(type="text", text=md.strip())]
+            payload = {
+                "summary": f"Top cited sources across {target_brand_name}'s tracked topics",
+                "rows": rows,
+                "best_roi": best_roi,
+            }
+            return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "get_recommendations":
             # Not implemented — queries a table that doesn't exist in the
@@ -1079,28 +1178,16 @@ async def handle_call_tool(
             else:
                 timed_out = False
             
-            markdown_output = f"**AEO Analysis Report for {brand_name}**\n"
-            markdown_output += f"*Location:* {location or 'Global'}\n"
-            if timed_out:
-                markdown_output += f"⚠️ *Scan exceeded {SCAN_TIMEOUT}s — partial results shown. Try fewer queries or engines next time.*\n"
-            if skipped:
-                markdown_output += f"*Active Engines:* {', '.join([m.title() for m in models])} *(Skipped: {', '.join([s.title() for s in skipped])})*\n\n"
-            else:
-                markdown_output += f"*Active Engines:* {', '.join([m.title() for m in models])}\n\n"
-            
-            failed_runs = [r for r in results if r and ("error" in r)]
-            if failed_runs:
-                failed_count = len(failed_runs)
-                total_count = len([r for r in results if r])
-                failed_engines = sorted(set([r.get("engine", "Unknown").title() for r in failed_runs]))
-                markdown_output += f"⚠️ {failed_count}/{total_count} calls failed on: {', '.join(failed_engines)}\n\n"
-            
-
+            # Structured JSON response (Scan Report card — see AEO_CARD_CONTRACTS.md
+            # §"Scan Report card"), replacing the old hand-formatted markdown string.
+            # Per the card contract's own rule #1, a non-JSON response can never
+            # render as a real card or carry buttons — this is the root reason the
+            # per-topic view previously looked flat no matter what the renderer did.
             grouped_results = defaultdict(list)
             for res in results:
                 if res and res.get('query'):
                     grouped_results[res.get('query')].append(res)
-                
+
             if grouped_results:
                 first_query = list(grouped_results.keys())[0]
                 LAST_SEARCHED_TOPICS[str(workspace_id)] = first_query
@@ -1110,22 +1197,24 @@ async def handle_call_tool(
                         if c.get('url'):
                             all_citations.append(c.get('url'))
                 LAST_SEARCHED_CITATIONS[str(workspace_id)] = list(set(all_citations))
-            
+
+            topics_payload = []
             for query, engine_results in grouped_results.items():
                 engine_groups = defaultdict(list)
                 for res in engine_results:
                     engine_groups[res.get('engine', 'Unknown').title()].append(res)
-                    
-                target_wins = []
-                target_losses = []
+
+                engines_hit = []      # [{"name": ..., "position": ...}]
+                engines_missed = []   # [name, ...] — explicitly named, not just a fraction
                 brand_tally = {}
-                
+                sample_losing_answer = None
+
                 for engine_name, res_list in engine_groups.items():
                     successful_passes = [r for r in res_list if "error" not in r]
                     if not successful_passes:
-                        target_losses.append(engine_name)
+                        engines_missed.append(engine_name)
                         continue
-                        
+
                     target_mentions = 0
                     pos_list = []
                     for res in successful_passes:
@@ -1135,40 +1224,68 @@ async def handle_call_tool(
                             target_mentions += 1
                             if target_mention.get('position'):
                                 pos_list.append(target_mention.get('position'))
-                        
+                        else:
+                            sample_losing_answer = sample_losing_answer or res.get('raw_text')
+
                         for m in mentions:
                             c_name = m.get('brand_name', 'Unknown')
                             if c_name:
                                 brand_tally[c_name] = brand_tally.get(c_name, 0) + 1
-                                
+
                     mention_rate = target_mentions / len(successful_passes)
                     if mention_rate >= 0.5:
-                        pos = pos_list[0] if pos_list else '-'
-                        target_wins.append(f"✅ {engine_name} (#{pos})")
+                        engines_hit.append({"name": engine_name, "position": (pos_list[0] if pos_list else None)})
                     else:
-                        target_losses.append(engine_name)
-                        
-                total_engines = len(engine_groups)
-                win_count = len(target_wins)
-                
-                vis_str = f"*{win_count}/{total_engines} active engines*"
-                if target_wins:
-                    vis_str += f" ({', '.join(target_wins)})"
-                elif total_engines > 0:
-                    vis_str += " *(Not cited)*"
-                    
-                top_brands_str = "None identified"
-                if brand_tally:
-                    # Sort by number of engine mentions, then by name to ensure stable sorting
-                    sorted_brands = sorted(brand_tally.items(), key=lambda x: (-x[1], x[0]))
-                    top_brands = [c[0] for c in sorted_brands[:3]]
-                    top_brands_str = ", ".join(top_brands)
-                    
-                markdown_output += f"🔍 **{query}**\n"
-                markdown_output += f"• **Your Visibility:** {vis_str}\n"
-                markdown_output += f"• **Winning Brands:** {top_brands_str}\n\n"
+                        engines_missed.append(engine_name)
 
-            return [types.TextContent(type="text", text=markdown_output.strip())]
+                total_engines = len(engine_groups)
+                win_count = len(engines_hit)
+                visibility_pct = int(round((win_count / total_engines) * 100)) if total_engines else 0
+
+                winners = []
+                if brand_tally:
+                    sorted_brands = sorted(brand_tally.items(), key=lambda x: (-x[1], x[0]))
+                    winners = [c[0] for c in sorted_brands[:3]]
+
+                gap = None
+                if engines_missed and sample_losing_answer:
+                    gap = await _generate_topic_gap(query, brand_name, winners, sample_losing_answer)
+
+                if engines_hit:
+                    summary = f"{win_count}/{total_engines} engines cite {brand_name} for this topic."
+                else:
+                    summary = f"Not cited by any of {total_engines} engines checked for this topic."
+
+                topics_payload.append({
+                    "topic": query,
+                    "visibility": visibility_pct,
+                    "engines_hit": engines_hit,
+                    "engines_missed": engines_missed,
+                    "winners": winners,
+                    "gap": gap,
+                    "summary": summary,
+                })
+
+            failed_runs = [r for r in results if r and ("error" in r)]
+            failed_payload = None
+            if failed_runs:
+                failed_engines = sorted(set([r.get("engine", "Unknown").title() for r in failed_runs]))
+                failed_payload = {
+                    "count": len(failed_runs),
+                    "total": len([r for r in results if r]),
+                    "engines": failed_engines,
+                }
+
+            payload = {
+                "brand": brand_name,
+                "location": location or "Global",
+                "active_engines": [m.title() for m in models],
+                "skipped_engines": [s.title() for s in skipped] if skipped else [],
+                "timed_out": timed_out,
+                "failed": failed_payload,
+                "topics": topics_payload,
+            }
+            return [types.TextContent(type="text", text=json.dumps(payload))]
             
         elif name == "get_content_gaps":
             topic = arguments.get("topic")
