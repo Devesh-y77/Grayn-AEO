@@ -18,8 +18,16 @@ def get_lock(workspace_id: str) -> asyncio.Lock:
     return _workspace_locks[workspace_id]
 
 def clean_brand_name(raw: str) -> str:
-    # Split camelCase before lowercasing (e.g. HawaiiLife -> Hawaii Life)
-    raw = re.sub(r'([a-z])([A-Z])', r'\1 \2', raw)
+    # NOTE: this used to also split camelCase before lowercasing (e.g.
+    # "HawaiiLife" -> "Hawaii Life") — removed. That regex can't distinguish
+    # a genuinely concatenated domain-derived name from a brand's own
+    # stylized capitalization ("CLiQ", "YouTube", "GitHub", "LinkedIn" are
+    # structurally identical to "HawaiiLife" as far as a lowercase-to-
+    # uppercase transition is concerned), so it silently mangled real brand
+    # names into extra fake "words" (e.g. "CLiQ" -> "CLi Q"). That mangling
+    # was the actual root cause of "Tata CLiQ" / "Tata Cliq" being treated
+    # as different brands — case-insensitive matching (see _find_best_match)
+    # is the correct tool for that, not camelCase splitting.
     cleaned = raw.lower().strip()
     if cleaned.startswith("www."):
         cleaned = cleaned[4:]
@@ -48,21 +56,11 @@ def is_valid_merge(raw1: str, raw2: str, clean1: str, clean2: str) -> bool:
     if extract_trailing_symbols(clean1) != extract_trailing_symbols(clean2):
         return False
 
-    # Exact match once whitespace is removed — handles brand names with
-    # stylized internal capitalization (e.g. "CLiQ") that clean_brand_name's
-    # camelCase-split regex spuriously breaks into an extra "word" (turning
-    # "tata cliq" into "tata cli q" for one spelling but not the other),
-    # which would otherwise fail the word-multiset check below even though
-    # the names are actually identical (this was the root cause of "Tata
-    # CLiQ" / "Tata Cliq" showing up as two separate competitors).
-    if clean1.replace(' ', '') == clean2.replace(' ', ''):
-        return True
-
     ta = get_word_multiset(clean1)
     tb = get_word_multiset(clean2)
     if len(ta.symmetric_difference(tb)) > 0:
         return False
-            
+
     return True
 
 def has_domain_suffix(raw: str) -> bool:
@@ -98,7 +96,16 @@ def _find_best_match(raw: str, cleaned: str, existing: List[Dict[str, Any]]) -> 
         variants_to_check = [brand["canonical_name"]] + (brand.get("aliases") or [])
         for alias in variants_to_check:
             alias_clean = clean_brand_name(alias)
+            # Case-insensitive comparison, tried alongside the normally
+            # cleaned one, using whichever score is higher. Two names that
+            # are identical once lowercased are the same brand regardless of
+            # capitalization style — this is the correct, general fix for
+            # stylized-cap variants (e.g. "Tata CLiQ" / "Tata Cliq"), unlike
+            # camelCase splitting, which mangles names instead of comparing
+            # them case-insensitively.
             score = fuzz.ratio(cleaned, alias_clean)
+            score_ci = fuzz.ratio(cleaned.lower(), alias_clean.lower())
+            score = max(score, score_ci)
             if score >= 90:
                 if is_valid_merge(raw, alias, cleaned, alias_clean):
                     if score > best_score:
