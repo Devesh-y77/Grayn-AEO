@@ -1281,6 +1281,34 @@ async def handle_call_tool(
                     "engines": failed_engines,
                 }
 
+            # Plain-text fallback rendering of the same data, for any Slack-side
+            # renderer that doesn't yet recognize this JSON shape. Once
+            # renderScanReportCard exists (see AEO_CARD_CONTRACTS.md §8a),
+            # it should render the structured fields above directly and can
+            # ignore this field — it exists purely so an unaware renderer
+            # shows readable text instead of a raw JSON dump in the interim.
+            display_lines = [f"**AEO Analysis Report for {brand_name}**", f"*Location:* {location or 'Global'}"]
+            if timed_out:
+                display_lines.append(f"⚠️ *Scan exceeded {SCAN_TIMEOUT}s — partial results shown. Try fewer queries or engines next time.*")
+            if skipped:
+                display_lines.append(f"*Active Engines:* {', '.join([m.title() for m in models])} *(Skipped: {', '.join([s.title() for s in skipped])})*")
+            else:
+                display_lines.append(f"*Active Engines:* {', '.join([m.title() for m in models])}")
+            if failed_payload:
+                display_lines.append(f"⚠️ {failed_payload['count']}/{failed_payload['total']} calls failed on: {', '.join(failed_payload['engines'])}")
+            display_lines.append("")
+            for t in topics_payload:
+                hit_names = [e["name"] for e in t["engines_hit"]]
+                if hit_names:
+                    hit_str = ", ".join(f"✅ {e['name']} (#{e['position'] or '-'})" for e in t["engines_hit"])
+                    vis_str = f"*{len(hit_names)}/{len(hit_names) + len(t['engines_missed'])} active engines* ({hit_str})"
+                else:
+                    vis_str = f"*0/{len(t['engines_missed'])} active engines* *(Not cited)*"
+                display_lines.append(f"🔍 **{t['topic']}**")
+                display_lines.append(f"• **Your Visibility:** {vis_str}")
+                display_lines.append(f"• **Winning Brands:** {', '.join(t['winners']) if t['winners'] else 'None identified'}")
+                display_lines.append("")
+
             payload = {
                 "brand": brand_name,
                 "location": location or "Global",
@@ -1289,6 +1317,7 @@ async def handle_call_tool(
                 "timed_out": timed_out,
                 "failed": failed_payload,
                 "topics": topics_payload,
+                "display": "\n".join(display_lines).strip(),
             }
             return [types.TextContent(type="text", text=json.dumps(payload))]
             

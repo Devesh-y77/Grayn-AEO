@@ -268,11 +268,21 @@ Suggested buttons once implemented: **Build outreach list** (no MCP call — lik
       "gap": null,
       "summary": "2/2 engines cite Acme Corp for this topic."
     }
-  ]
+  ],
+  "display": "**AEO Analysis Report for Acme Corp**\n*Location:* USA\n..."
+                                                   // NEW — a plain markdown-formatted rendering of the exact
+                                                   //   same data above (brand/location/engines/topics), included
+                                                   //   purely so a renderer that doesn't yet recognize this JSON
+                                                   //   shape has something readable to fall back to instead of
+                                                   //   showing raw JSON. Once renderScanReportCard exists and
+                                                   //   renders the structured fields directly, this field can be
+                                                   //   ignored (or removed from the backend response).
 }
 ```
 
 The simplest correct renderer: treat `topics` as a list of Topic-card-shaped objects (§2) and render one after another, with a header built from `brand`/`location`/`active_engines`/`skipped_engines`/`failed` (this is effectively the multi-topic version of §2 — reuse `renderTopicCard`'s per-entry layout in a loop rather than writing a parallel implementation).
+
+**Interim behavior until that renderer exists:** if `renderAeoJsonCard` doesn't recognize this shape yet, render `display` as plain text rather than dumping the raw JSON string — that's the entire reason the field exists.
 
 ---
 
