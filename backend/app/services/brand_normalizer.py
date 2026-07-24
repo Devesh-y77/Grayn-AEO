@@ -47,7 +47,17 @@ def is_valid_merge(raw1: str, raw2: str, clean1: str, clean2: str) -> bool:
         return False
     if extract_trailing_symbols(clean1) != extract_trailing_symbols(clean2):
         return False
-        
+
+    # Exact match once whitespace is removed — handles brand names with
+    # stylized internal capitalization (e.g. "CLiQ") that clean_brand_name's
+    # camelCase-split regex spuriously breaks into an extra "word" (turning
+    # "tata cliq" into "tata cli q" for one spelling but not the other),
+    # which would otherwise fail the word-multiset check below even though
+    # the names are actually identical (this was the root cause of "Tata
+    # CLiQ" / "Tata Cliq" showing up as two separate competitors).
+    if clean1.replace(' ', '') == clean2.replace(' ', ''):
+        return True
+
     ta = get_word_multiset(clean1)
     tb = get_word_multiset(clean2)
     if len(ta.symmetric_difference(tb)) > 0:
