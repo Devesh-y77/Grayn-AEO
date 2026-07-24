@@ -875,6 +875,23 @@ async def handle_call_tool(
                 except Exception:
                     pass
 
+            # De-duplicate by normalized text. The underlying table can hold
+            # case-variant duplicates for the same logical topic (e.g. legacy
+            # rows from before prompt_text was consistently .strip().lower()'d
+            # everywhere) — without this, the cache-reuse fetch above can pull
+            # in both variants as if they were different topics, doubling the
+            # cost of the scan and showing the same topic twice in the report
+            # with two independently-judged (and sometimes different-looking)
+            # results.
+            seen_normalized = set()
+            deduped_queries = []
+            for q in suggested_queries:
+                norm = q.strip().lower()
+                if norm not in seen_normalized:
+                    seen_normalized.add(norm)
+                    deduped_queries.append(q)
+            suggested_queries = deduped_queries
+
             iso_week = f"{datetime.now().year}-W{datetime.now().isocalendar()[1]:02d}"
 
             # Batch the brand lookup ONCE for the whole scan, and normalize
